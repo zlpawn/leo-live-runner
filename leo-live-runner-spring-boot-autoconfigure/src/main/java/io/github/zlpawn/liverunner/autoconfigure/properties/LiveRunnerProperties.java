@@ -17,21 +17,10 @@ public class LiveRunnerProperties {
     private boolean enabled = true;
 
     /**
-     * Whether to enforce token authentication on HTTP endpoints.
-     * Default is false (Token check is disabled by default, opt-in for production).
-     */
-    private boolean tokenCheckEnabled = false;
-
-    /**
      * Whether to enforce AST security checks and high-risk API blacklisting.
      * Default is true (Security sandbox enabled by default to protect JVM & OS).
      */
     private boolean securityCheckEnabled = true;
-
-    /**
-     * Secret authentication token required in HTTP Header (X-Live-Token) when tokenCheckEnabled=true.
-     */
-    private String token = "LeoLiveRunnerSecretToken@2026";
 
     /**
      * Default execution timeout in seconds.
@@ -56,28 +45,12 @@ public class LiveRunnerProperties {
         this.enabled = enabled;
     }
 
-    public boolean isTokenCheckEnabled() {
-        return tokenCheckEnabled;
-    }
-
-    public void setTokenCheckEnabled(boolean tokenCheckEnabled) {
-        this.tokenCheckEnabled = tokenCheckEnabled;
-    }
-
     public boolean isSecurityCheckEnabled() {
         return securityCheckEnabled;
     }
 
     public void setSecurityCheckEnabled(boolean securityCheckEnabled) {
         this.securityCheckEnabled = securityCheckEnabled;
-    }
-
-    public String getToken() {
-        return token;
-    }
-
-    public void setToken(String token) {
-        this.token = token;
     }
 
     public int getDefaultTimeoutSeconds() {

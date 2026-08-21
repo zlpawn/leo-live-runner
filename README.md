@@ -188,6 +188,45 @@ public class OrderApiController {
 
 ---
 
+## 🔐 安全与权限扩展 (SPI Plugin Architecture)
+
+框架采用责任链 + 上下文模式（Context-Result Pattern），业务方无需修改框架源码，实现 `LiveRunnerAccessValidator` 并声明为 Spring Bean 即可无缝接入自定义鉴权逻辑（如 JWT、SSO、IP 白名单、RBAC 等）。
+
+### 1. 自定义权限校验器示例
+```java
+package com.example.config;
+
+import io.github.zlpawn.liverunner.core.security.AccessContext;
+import io.github.zlpawn.liverunner.core.security.AccessResult;
+import io.github.zlpawn.liverunner.core.security.LiveRunnerAccessValidator;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+@Component
+@Order(1) // 支持 Spring 原生 @Order 控制多校验器执行顺序
+public class CustomSecurityValidator implements LiveRunnerAccessValidator {
+
+    @Override
+    public AccessResult validate(AccessContext context) {
+        // 1. 提取请求头或 IP
+        String token = context.getHeader("X-Admin-Token");
+        String clientIp = context.getClientIp();
+
+        // 2. 针对高危 execute/unregister 端点做严格校验
+        if ("execute".equals(context.getEndpoint()) && !"SuperAdminToken@2026".equals(token)) {
+            return AccessResult.deny(403, "权限不足：只有超级管理员允许执行热补丁操作！");
+        }
+
+        // 3. 校验通过，允许请求通过
+        return AccessResult.allow();
+    }
+}
+```
+
+> 💡 **默认行为**：如果宿主工程没有声明任何自定义 Validator，框架默认激活 `DefaultWarnAccessValidator`，打印 WARN 告警日志并默认放行，方便本地与开发环境快速调试。
+
+---
+
 ## 🌍 发布到 Maven Central 中央仓库指南
 
 本项目已预置最新版 `central-publishing-maven-plugin` 与 GPG 签名配置，支持直接一键发布至 Maven 中央仓库（Sonatype Central Portal）。

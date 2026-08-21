@@ -7,6 +7,10 @@ import io.github.zlpawn.liverunner.core.engine.LiveRunnerEngine;
 import io.github.zlpawn.liverunner.core.model.LiveRunnerResponse;
 import io.github.zlpawn.liverunner.core.model.ScriptExecuteResult;
 import io.github.zlpawn.liverunner.core.model.ScriptHolder;
+import io.github.zlpawn.liverunner.core.model.ScriptInfo;
+import io.github.zlpawn.liverunner.core.security.AccessContext;
+import io.github.zlpawn.liverunner.core.security.AccessResult;
+import io.github.zlpawn.liverunner.core.security.LiveRunnerAccessValidator;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +18,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @SpringBootTest
@@ -102,6 +109,8 @@ public class SampleApplicationTest {
 
     @Test
     public void testSingleMethodClassWithoutRunName() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
         Map<String, Object> registerBody = new HashMap<>();
         registerBody.put("scriptKey", "single-custom-method");
         registerBody.put("scriptSource", ""
@@ -113,22 +122,24 @@ public class SampleApplicationTest {
                 + "}\n");
         registerBody.put("remark", "Single method without run name");
 
-        controller.register(null, registerBody);
+        controller.register(request, registerBody);
 
         Map<String, Object> params = new HashMap<>();
         params.put("name", "LEO");
-        ResponseEntity<LiveRunnerResponse<Object>> res = controller.invoke("single-custom-method", null, null, 10, params);
+        ResponseEntity<LiveRunnerResponse<Object>> res = controller.invoke(request, "single-custom-method", null, 10, params);
 
         Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
         Assertions.assertEquals(200, res.getBody().getCode());
         Assertions.assertEquals("HELLO_LEO", res.getBody().getData());
         Assertions.assertEquals("SUCCESS", res.getBody().getMsg());
 
-        controller.unregister("single-custom-method", null);
+        controller.unregister(request, "single-custom-method");
     }
 
     @Test
     public void testMultiMethodSecondaryPathInvocation() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
         Map<String, Object> registerBody = new HashMap<>();
         registerBody.put("scriptKey", "order-api-multi");
         registerBody.put("scriptSource", ""
@@ -154,31 +165,33 @@ public class SampleApplicationTest {
                 + "}\n");
         registerBody.put("remark", "Multi-method API Controller");
 
-        controller.register(null, registerBody);
+        controller.register(request, registerBody);
 
         // 1. Invoke /invoke/order-api-multi/update
         Map<String, Object> updateParams = new HashMap<>();
         updateParams.put("orderId", "1002");
         updateParams.put("status", "STATUS_PROCESSING");
-        ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.invoke("order-api-multi", "update", null, 10, updateParams);
+        ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.invoke(request, "order-api-multi", "update", 10, updateParams);
         Assertions.assertEquals("UPDATE_SUCCESS", updateRes.getBody().getData());
         Assertions.assertEquals("SUCCESS", updateRes.getBody().getMsg());
 
         // 2. Invoke /invoke/order-api-multi/query
         Map<String, Object> queryParams = new HashMap<>();
         queryParams.put("orderId", "1002");
-        ResponseEntity<LiveRunnerResponse<Object>> queryRes = controller.invoke("order-api-multi", "query", null, 10, queryParams);
+        ResponseEntity<LiveRunnerResponse<Object>> queryRes = controller.invoke(request, "order-api-multi", "query", 10, queryParams);
         Assertions.assertEquals("QUERY_STATUS_PROCESSING", queryRes.getBody().getData());
 
         // 3. Invoke /invoke/order-api-multi/cancel
-        ResponseEntity<LiveRunnerResponse<Object>> cancelRes = controller.invoke("order-api-multi", "cancel", null, 10, queryParams);
+        ResponseEntity<LiveRunnerResponse<Object>> cancelRes = controller.invoke(request, "order-api-multi", "cancel", 10, queryParams);
         Assertions.assertEquals("CANCEL_SUCCESS", cancelRes.getBody().getData());
 
-        controller.unregister("order-api-multi", null);
+        controller.unregister(request, "order-api-multi");
     }
 
     @Test
     public void testOneShotExecuteForMultiPodCluster() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
         Map<String, Object> executeBody = new HashMap<>();
         executeBody.put("scriptSource", ""
                 + "package com.example.dynamic;\n"
@@ -199,7 +212,7 @@ public class SampleApplicationTest {
         params.put("orderId", "1003");
         executeBody.put("params", params);
 
-        ResponseEntity<LiveRunnerResponse<Object>> res = controller.executeOneShot(null, null, 10, executeBody);
+        ResponseEntity<LiveRunnerResponse<Object>> res = controller.executeOneShot(request, null, 10, executeBody);
         Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
         Assertions.assertEquals(200, res.getBody().getCode());
         Assertions.assertTrue(res.getBody().isSuccess());
@@ -209,6 +222,7 @@ public class SampleApplicationTest {
 
     @Test
     public void testTransactionalAnnotationAutomaticRollback() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
         jdbcTemplate.update("UPDATE t_account SET balance = 1000 WHERE id = 1");
 
         // 1. Script with @Transactional that throws exception -> must rollback to 1000!
@@ -231,7 +245,7 @@ public class SampleApplicationTest {
                 + "    }\n"
                 + "}\n");
 
-        ResponseEntity<LiveRunnerResponse<Object>> failRes = controller.executeOneShot(null, null, 10, failBody);
+        ResponseEntity<LiveRunnerResponse<Object>> failRes = controller.executeOneShot(request, null, 10, failBody);
         Assertions.assertEquals(500, failRes.getBody().getCode());
         Assertions.assertFalse(failRes.getBody().isSuccess());
         Assertions.assertTrue(failRes.getBody().getMsg().contains("Triggering intentional transaction rollback"));
@@ -258,7 +272,7 @@ public class SampleApplicationTest {
                 + "    }\n"
                 + "}\n");
 
-        ResponseEntity<LiveRunnerResponse<Object>> successRes = controller.executeOneShot(null, null, 10, successBody);
+        ResponseEntity<LiveRunnerResponse<Object>> successRes = controller.executeOneShot(request, null, 10, successBody);
         Assertions.assertEquals(200, successRes.getBody().getCode());
         Assertions.assertTrue(successRes.getBody().isSuccess());
         Assertions.assertEquals("TX_COMMITTED", successRes.getBody().getData());
@@ -270,10 +284,12 @@ public class SampleApplicationTest {
 
     @Test
     public void testSecuritySandboxBlocksDangerousOperations() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
         // 1. Attempt System.exit(0)
         Map<String, Object> exitBody = new HashMap<>();
         exitBody.put("scriptSource", "public class EvilTask { public void run() { System.exit(0); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> exitRes = controller.executeOneShot(null, null, 10, exitBody);
+        ResponseEntity<LiveRunnerResponse<Object>> exitRes = controller.executeOneShot(request, null, 10, exitBody);
         Assertions.assertEquals(500, exitRes.getBody().getCode());
         Assertions.assertFalse(exitRes.getBody().isSuccess());
         Assertions.assertTrue(exitRes.getBody().getMsg().contains("Security Violation"));
@@ -281,7 +297,7 @@ public class SampleApplicationTest {
         // 2. Attempt Runtime.getRuntime().exec(...)
         Map<String, Object> execBody = new HashMap<>();
         execBody.put("scriptSource", "public class EvilExec { public void run() { Runtime.getRuntime().exec(\"calc\"); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> execRes = controller.executeOneShot(null, null, 10, execBody);
+        ResponseEntity<LiveRunnerResponse<Object>> execRes = controller.executeOneShot(request, null, 10, execBody);
         Assertions.assertEquals(500, execRes.getBody().getCode());
         Assertions.assertFalse(execRes.getBody().isSuccess());
         Assertions.assertTrue(execRes.getBody().getMsg().contains("Security Violation"));
@@ -289,9 +305,39 @@ public class SampleApplicationTest {
         // 3. Attempt ProcessBuilder
         Map<String, Object> pbBody = new HashMap<>();
         pbBody.put("scriptSource", "public class EvilPb { public void run() { new ProcessBuilder(\"cmd\").start(); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> pbRes = controller.executeOneShot(null, null, 10, pbBody);
+        ResponseEntity<LiveRunnerResponse<Object>> pbRes = controller.executeOneShot(request, null, 10, pbBody);
         Assertions.assertEquals(500, pbRes.getBody().getCode());
         Assertions.assertFalse(pbRes.getBody().isSuccess());
         Assertions.assertTrue(pbRes.getBody().getMsg().contains("Security Violation"));
+    }
+
+    @Test
+    public void testCustomAccessValidatorSpiChain() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-Custom-Admin", "secret_pass");
+
+        // 1. Custom Validator that denies unauthorized request
+        LiveRunnerAccessValidator denyValidator = context -> {
+            String token = context.getHeader("X-Custom-Admin");
+            if (!"secret_pass".equals(token)) {
+                return AccessResult.deny(401, "Custom Auth Denied: Invalid X-Custom-Admin token");
+            }
+            return AccessResult.allow();
+        };
+
+        LiveRunnerController secureController = new LiveRunnerController(engine, injector, properties,
+                Collections.singletonList(denyValidator));
+
+        // Attempt without header -> Denied with 401
+        MockHttpServletRequest unauthRequest = new MockHttpServletRequest();
+        ResponseEntity<LiveRunnerResponse<List<ScriptInfo>>> denyRes = secureController.list(unauthRequest);
+        Assertions.assertEquals(HttpStatus.UNAUTHORIZED, denyRes.getStatusCode());
+        Assertions.assertEquals(401, denyRes.getBody().getCode());
+        Assertions.assertTrue(denyRes.getBody().getMsg().contains("Custom Auth Denied"));
+
+        // Attempt with header -> Allowed with 200
+        ResponseEntity<LiveRunnerResponse<List<ScriptInfo>>> allowRes = secureController.list(request);
+        Assertions.assertEquals(HttpStatus.OK, allowRes.getStatusCode());
+        Assertions.assertEquals(200, allowRes.getBody().getCode());
     }
 }
