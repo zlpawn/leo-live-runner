@@ -190,28 +190,17 @@ public class OrderApiController {
 
 ## 🌍 发布到 Maven Central 中央仓库指南
 
-本项目已预置最新版 `central-publishing-maven-plugin` 与 GPG 签名配置，可一键推送到 Maven 中央仓库：
+本项目已预置最新版 `central-publishing-maven-plugin` 与 GPG 签名配置，支持直接一键发布至 Maven 中央仓库（Sonatype Central Portal）。
 
-### 1. 验证 GroupId (`io.github.zlpawn`)
-1. 登录 [Sonatype Central Portal](https://central.sonatype.com/)；
-2. 在 **Namespaces** 中添加 `io.github.zlpawn`；
-3. 根据提示在你的 GitHub (`https://github.com/zlpawn`) 下创建一个同名临时 Public 仓库完成验证。
+👉 **完整发布实操手册**：[Maven Central 详细发布指南 (docs/maven-central-publish-guide.md)](docs/maven-central-publish-guide.md)
 
-### 2. 配置本地 `~/.m2/settings.xml`
-```xml
-<servers>
-    <server>
-        <id>central</id>
-        <username>你的Sonatype_Token_Username</username>
-        <password>你的Sonatype_Token_Password</password>
-    </server>
-</servers>
-```
-
-### 3. 一键发布
-```bash
-mvn clean deploy
-```
+### 快速三步发布简述：
+1. **命名空间认证**：在 [Sonatype Central](https://central.sonatype.com/) 认证 Namespace `io.github.zlpawn`；
+2. **配置令牌与 GPG**：在 `~/.m2/settings.xml` 配置 Central Token 并准备好 GPG 秘钥；
+3. **一键构建签名与发布**：
+   ```bash
+   mvn clean deploy
+   ```
 
 ---
 
