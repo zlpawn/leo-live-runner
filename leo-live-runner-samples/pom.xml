@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.zlpawn</groupId>
+        <artifactId>leo-live-runner</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>leo-live-runner-samples</artifactId>
+    <packaging>pom</packaging>
+
+    <name>leo-live-runner-samples</name>
+    <description>Sample applications demonstrating leo-live-runner usage</description>
+
+    <modules>
+        <module>sample-app</module>
+    </modules>
+</project>

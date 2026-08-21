@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.zlpawn</groupId>
+        <artifactId>leo-live-runner</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>leo-live-runner-core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>leo-live-runner-core</name>
+    <description>Core engine for dynamic compilation, classloader isolation, and execution</description>
+
+    <dependencies>
+        <!-- Groovy dynamic compilation engine -->
+        <dependency>
+            <groupId>org.codehaus.groovy</groupId>
+            <artifactId>groovy</artifactId>
+        </dependency>
+
+        <!-- Logging API -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+    </dependencies>
+</project>

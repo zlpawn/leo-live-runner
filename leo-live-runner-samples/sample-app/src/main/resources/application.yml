@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+leo:
+  live-runner:
+    # Component is enabled by default (enabled: true)
+    # Token check is disabled by default (token-check-enabled: false)
+    # Configure token when needed:
+    token: "LeoLiveRunnerSecretToken@2026"
+    default-timeout-seconds: 60
