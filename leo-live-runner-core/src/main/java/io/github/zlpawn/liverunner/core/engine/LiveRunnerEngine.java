@@ -219,6 +219,8 @@ public class LiveRunnerEngine {
                 current = current.getCause();
             } else if (current instanceof InvocationTargetException && current.getCause() != null) {
                 current = current.getCause();
+            } else if (current.getClass().getName().contains("UndeclaredThrowableException") && current.getCause() != null) {
+                current = current.getCause();
             } else {
                 break;
             }

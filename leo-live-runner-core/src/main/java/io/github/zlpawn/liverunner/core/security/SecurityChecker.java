@@ -1,5 +1,6 @@
 package io.github.zlpawn.liverunner.core.security;
 
+import io.github.zlpawn.liverunner.core.LiveRunnerClassLoader;
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 
@@ -47,7 +48,7 @@ public class SecurityChecker {
      */
     public static CompilerConfiguration createSecureCompilerConfig() {
         CompilerConfiguration config = new CompilerConfiguration();
-        config.setParameters(true); // Preserve parameter names for method parameter reflection
+        LiveRunnerClassLoader.enableParametersIfSupported(config); // Preserve parameter names if supported
 
         SecureASTCustomizer customizer = new SecureASTCustomizer();
         customizer.setReceiversBlackList(Arrays.asList(

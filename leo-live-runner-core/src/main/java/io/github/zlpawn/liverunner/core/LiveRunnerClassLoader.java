@@ -17,7 +17,19 @@ public class LiveRunnerClassLoader extends GroovyClassLoader {
 
     static {
         DEFAULT_CONFIG = new CompilerConfiguration();
-        DEFAULT_CONFIG.setParameters(true); // Preserve parameter names in compiled bytecode
+        enableParametersIfSupported(DEFAULT_CONFIG);
+    }
+
+    public static void enableParametersIfSupported(CompilerConfiguration config) {
+        if (config == null) {
+            return;
+        }
+        try {
+            java.lang.reflect.Method m = CompilerConfiguration.class.getMethod("setParameters", boolean.class);
+            m.invoke(config, true);
+        } catch (Throwable ignored) {
+            // Groovy 2.4.x does not have setParameters method; gracefully ignored
+        }
     }
 
     public LiveRunnerClassLoader() {

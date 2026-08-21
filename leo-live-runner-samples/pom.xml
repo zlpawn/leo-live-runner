@@ -16,7 +16,23 @@
     <name>leo-live-runner-samples</name>
     <description>Sample applications demonstrating leo-live-runner usage</description>
 
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <modules>
         <module>sample-app</module>
     </modules>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <configuration>
+                    <skipPublishing>true</skipPublishing>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
