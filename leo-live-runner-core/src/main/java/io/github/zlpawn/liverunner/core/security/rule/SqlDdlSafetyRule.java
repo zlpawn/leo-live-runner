@@ -12,6 +12,16 @@ public class SqlDdlSafetyRule implements SecurityRule {
 
     public static final SqlDdlSafetyRule INSTANCE = new SqlDdlSafetyRule();
 
+    private final boolean allowDdl;
+
+    public SqlDdlSafetyRule() {
+        this(false);
+    }
+
+    public SqlDdlSafetyRule(boolean allowDdl) {
+        this.allowDdl = allowDdl;
+    }
+
     private static final Pattern PATTERN_DROP =
             Pattern.compile("(?i)\\bDROP\\s+(DATABASE|SCHEMA|TABLE|INDEX|VIEW|TRIGGER|PROCEDURE|FUNCTION)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern PATTERN_TRUNCATE =
@@ -28,7 +38,7 @@ public class SqlDdlSafetyRule implements SecurityRule {
 
     @Override
     public RuleResult check(String scriptSource) {
-        if (scriptSource == null || scriptSource.trim().isEmpty()) {
+        if (scriptSource == null || scriptSource.trim().isEmpty() || allowDdl) {
             return RuleResult.pass();
         }
 

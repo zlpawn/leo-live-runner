@@ -288,6 +288,10 @@ public class LiveRunnerEngine {
         return registry;
     }
 
+    public ExecutorService getExecutorService() {
+        return executorService;
+    }
+
     public void shutdown() {
         executorService.shutdown();
         registry.clear();

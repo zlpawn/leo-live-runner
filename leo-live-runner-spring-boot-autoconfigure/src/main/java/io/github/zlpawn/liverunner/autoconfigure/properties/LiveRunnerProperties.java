@@ -57,6 +57,11 @@ public class LiveRunnerProperties {
      */
     private RejectionPolicyType rejectionPolicy = RejectionPolicyType.CALLER_RUNS;
 
+    /**
+     * Granular security rules configuration.
+     */
+    private Security security = new Security();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -66,11 +71,12 @@ public class LiveRunnerProperties {
     }
 
     public boolean isSecurityCheckEnabled() {
-        return securityCheckEnabled;
+        return securityCheckEnabled && security.isEnabled();
     }
 
     public void setSecurityCheckEnabled(boolean securityCheckEnabled) {
         this.securityCheckEnabled = securityCheckEnabled;
+        this.security.setEnabled(securityCheckEnabled);
     }
 
     public int getDefaultTimeoutSeconds() {
@@ -127,5 +133,147 @@ public class LiveRunnerProperties {
 
     public void setRejectionPolicy(RejectionPolicyType rejectionPolicy) {
         this.rejectionPolicy = rejectionPolicy;
+    }
+
+    public Security getSecurity() {
+        return security;
+    }
+
+    public void setSecurity(Security security) {
+        if (security != null) {
+            this.security = security;
+        }
+    }
+
+    /**
+     * Nested security sandbox configuration properties.
+     */
+    public static class Security {
+        private boolean enabled = true;
+        private java.util.List<String> deniedBeans = new java.util.ArrayList<>();
+        private java.util.List<String> allowedPackages = new java.util.ArrayList<>(java.util.Collections.singletonList("*"));
+        private SqlSecurity sql = new SqlSecurity();
+        private RedisSecurity redis = new RedisSecurity();
+        private SystemSecurity system = new SystemSecurity();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public java.util.List<String> getDeniedBeans() {
+            return deniedBeans;
+        }
+
+        public void setDeniedBeans(java.util.List<String> deniedBeans) {
+            this.deniedBeans = deniedBeans != null ? deniedBeans : new java.util.ArrayList<>();
+        }
+
+        public java.util.List<String> getAllowedPackages() {
+            return allowedPackages;
+        }
+
+        public void setAllowedPackages(java.util.List<String> allowedPackages) {
+            this.allowedPackages = allowedPackages != null ? allowedPackages : new java.util.ArrayList<>();
+        }
+
+        public SqlSecurity getSql() {
+            return sql;
+        }
+
+        public void setSql(SqlSecurity sql) {
+            if (sql != null) this.sql = sql;
+        }
+
+        public RedisSecurity getRedis() {
+            return redis;
+        }
+
+        public void setRedis(RedisSecurity redis) {
+            if (redis != null) this.redis = redis;
+        }
+
+        public SystemSecurity getSystem() {
+            return system;
+        }
+
+        public void setSystem(SystemSecurity system) {
+            if (system != null) this.system = system;
+        }
+    }
+
+    public static class SqlSecurity {
+        private boolean allowDdl = false;
+        private boolean allowMissingWhere = false;
+        private int maxAffectedRows = 500;
+        private int maxQueryRows = 500;
+
+        public boolean isAllowDdl() {
+            return allowDdl;
+        }
+
+        public void setAllowDdl(boolean allowDdl) {
+            this.allowDdl = allowDdl;
+        }
+
+        public boolean isAllowMissingWhere() {
+            return allowMissingWhere;
+        }
+
+        public void setAllowMissingWhere(boolean allowMissingWhere) {
+            this.allowMissingWhere = allowMissingWhere;
+        }
+
+        public int getMaxAffectedRows() {
+            return maxAffectedRows;
+        }
+
+        public void setMaxAffectedRows(int maxAffectedRows) {
+            this.maxAffectedRows = maxAffectedRows;
+        }
+
+        public int getMaxQueryRows() {
+            return maxQueryRows;
+        }
+
+        public void setMaxQueryRows(int maxQueryRows) {
+            this.maxQueryRows = maxQueryRows;
+        }
+    }
+
+    public static class RedisSecurity {
+        private boolean allowDangerousKeys = false;
+
+        public boolean isAllowDangerousKeys() {
+            return allowDangerousKeys;
+        }
+
+        public void setAllowDangerousKeys(boolean allowDangerousKeys) {
+            this.allowDangerousKeys = allowDangerousKeys;
+        }
+    }
+
+    public static class SystemSecurity {
+        private boolean allowProcessExec = false;
+        private boolean allowSystemExit = false;
+
+        public boolean isAllowProcessExec() {
+            return allowProcessExec;
+        }
+
+        public void setAllowProcessExec(boolean allowProcessExec) {
+            this.allowProcessExec = allowProcessExec;
+        }
+
+        public boolean isAllowSystemExit() {
+            return allowSystemExit;
+        }
+
+        public void setAllowSystemExit(boolean allowSystemExit) {
+            this.allowSystemExit = allowSystemExit;
+        }
     }
 }

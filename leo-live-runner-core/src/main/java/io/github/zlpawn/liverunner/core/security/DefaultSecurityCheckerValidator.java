@@ -36,6 +36,24 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
         }
     }
 
+    public static List<SecurityRule> createDefaultRules(boolean allowDdl, boolean allowMissingWhere, boolean allowDangerousKeys, boolean allowProcessExec) {
+        return Arrays.asList(
+                new SystemSecurityRule(allowProcessExec),
+                ThreadSecurityRule.INSTANCE,
+                SpringConfigSecurityRule.INSTANCE,
+                new RedisSafetyRule(allowDangerousKeys),
+                new SqlSafetyRule(allowMissingWhere),
+                new SqlDdlSafetyRule(allowDdl)
+        );
+    }
+
+    public void reloadRules(List<SecurityRule> newRules) {
+        this.rules.clear();
+        if (newRules != null) {
+            this.rules.addAll(newRules);
+        }
+    }
+
     @Override
     public CodeValidationResult validate(String scriptKey, String scriptSource) {
         if (scriptSource == null || scriptSource.trim().isEmpty()) {

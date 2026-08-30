@@ -17,19 +17,23 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import io.github.zlpawn.liverunner.autoconfigure.listener.LiveRunnerConfigurationChangeListener;
+import io.github.zlpawn.liverunner.autoconfigure.pool.LiveRunnerThreadPoolRefresher;
+import io.github.zlpawn.liverunner.core.pool.ResizableLinkedBlockingQueue;
+import io.github.zlpawn.liverunner.core.security.rule.SecurityRule;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Spring Boot AutoConfiguration for Leo Live Runner.
- * Configures ScriptRegistry, independent Worker ExecutorService, LiveRunnerCodeValidator,
- * SpringBeanInjector, and REST Controller.
+ * Configures ScriptRegistry, dynamic Resizable Worker ExecutorService, LiveRunnerCodeValidator,
+ * SpringBeanInjector, LiveRunnerThreadPoolRefresher, and REST Controller.
  *
  * @author Leo (zlpawn)
  */
@@ -52,7 +56,7 @@ public class LiveRunnerAutoConfiguration {
                 properties.getCorePoolSize(),
                 properties.getMaxPoolSize(),
                 properties.getKeepAliveSeconds(), TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(properties.getQueueCapacity()),
+                new ResizableLinkedBlockingQueue<>(properties.getQueueCapacity()),
                 r -> {
                     Thread t = new Thread(r, properties.getThreadNamePrefix() + System.currentTimeMillis());
                     t.setDaemon(true);
@@ -62,10 +66,26 @@ public class LiveRunnerAutoConfiguration {
         );
     }
 
+    @Bean(name = "liveRunnerThreadPoolRefresher")
+    @ConditionalOnMissingBean(LiveRunnerThreadPoolRefresher.class)
+    public LiveRunnerThreadPoolRefresher liveRunnerThreadPoolRefresher(
+            @Qualifier("liveRunnerExecutorService") ExecutorService liveRunnerExecutorService) {
+        if (liveRunnerExecutorService instanceof ThreadPoolExecutor) {
+            return new LiveRunnerThreadPoolRefresher((ThreadPoolExecutor) liveRunnerExecutorService);
+        }
+        return null;
+    }
+
     @Bean
     @ConditionalOnMissingBean(LiveRunnerCodeValidator.class)
-    public DefaultSecurityCheckerValidator defaultSecurityCheckerValidator() {
-        return new DefaultSecurityCheckerValidator();
+    public DefaultSecurityCheckerValidator defaultSecurityCheckerValidator(LiveRunnerProperties properties) {
+        List<SecurityRule> rules = DefaultSecurityCheckerValidator.createDefaultRules(
+                properties.getSecurity().getSql().isAllowDdl(),
+                properties.getSecurity().getSql().isAllowMissingWhere(),
+                properties.getSecurity().getRedis().isAllowDangerousKeys(),
+                properties.getSecurity().getSystem().isAllowProcessExec()
+        );
+        return new DefaultSecurityCheckerValidator(rules);
     }
 
     @Bean
@@ -83,8 +103,21 @@ public class LiveRunnerAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SpringBeanInjector springBeanInjector(ApplicationContext applicationContext) {
-        return new SpringBeanInjector(applicationContext);
+    public LiveRunnerConfigurationChangeListener liveRunnerConfigurationChangeListener(
+            LiveRunnerProperties properties,
+            ObjectProvider<LiveRunnerThreadPoolRefresher> threadPoolRefresherProvider,
+            LiveRunnerEngine engine) {
+        return new LiveRunnerConfigurationChangeListener(
+                properties,
+                threadPoolRefresherProvider.getIfAvailable(),
+                engine
+        );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SpringBeanInjector springBeanInjector(ApplicationContext applicationContext, LiveRunnerProperties properties) {
+        return new SpringBeanInjector(applicationContext, properties);
     }
 
     @Bean

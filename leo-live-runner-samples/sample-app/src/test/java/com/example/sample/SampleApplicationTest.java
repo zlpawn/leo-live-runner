@@ -471,4 +471,43 @@ public class SampleApplicationTest {
         Assertions.assertTrue(rules.contains("REDIS_SAFETY"));
         Assertions.assertTrue(rules.contains("THREAD_SECURITY"));
     }
+
+    @Test
+    public void testGetConfigEndpoint() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        ResponseEntity<LiveRunnerResponse<Map<String, Object>>> res = controller.getConfig(request);
+        Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
+        Assertions.assertEquals(200, res.getBody().getCode());
+        Assertions.assertTrue(res.getBody().isSuccess());
+
+        Map<String, Object> data = res.getBody().getData();
+        Assertions.assertNotNull(data);
+        Assertions.assertEquals(true, data.get("enabled"));
+        Assertions.assertEquals(true, data.get("securityCheckEnabled"));
+        Assertions.assertEquals(60, data.get("defaultTimeoutSeconds"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> threadPoolConfig = (Map<String, Object>) data.get("threadPoolConfig");
+        Assertions.assertNotNull(threadPoolConfig);
+        Assertions.assertEquals(2, threadPoolConfig.get("corePoolSize"));
+        Assertions.assertEquals(10, threadPoolConfig.get("maxPoolSize"));
+        Assertions.assertEquals(200, threadPoolConfig.get("queueCapacity"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> threadPoolRuntime = (Map<String, Object>) data.get("threadPoolRuntime");
+        Assertions.assertNotNull(threadPoolRuntime);
+        Assertions.assertNotNull(threadPoolRuntime.get("corePoolSize"));
+        Assertions.assertNotNull(threadPoolRuntime.get("queueCapacity"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> security = (Map<String, Object>) data.get("security");
+        Assertions.assertNotNull(security);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sql = (Map<String, Object>) security.get("sql");
+        Assertions.assertNotNull(sql);
+        Assertions.assertEquals(false, sql.get("allowDdl"));
+        Assertions.assertEquals(false, sql.get("allowMissingWhere"));
+        Assertions.assertEquals(500, sql.get("maxAffectedRows"));
+        Assertions.assertEquals(500, sql.get("maxQueryRows"));
+    }
 }

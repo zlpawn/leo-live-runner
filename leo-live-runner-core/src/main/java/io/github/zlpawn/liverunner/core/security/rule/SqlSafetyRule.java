@@ -16,6 +16,16 @@ public class SqlSafetyRule implements SecurityRule {
 
     public static final SqlSafetyRule INSTANCE = new SqlSafetyRule();
 
+    private final boolean allowMissingWhere;
+
+    public SqlSafetyRule() {
+        this(false);
+    }
+
+    public SqlSafetyRule(boolean allowMissingWhere) {
+        this.allowMissingWhere = allowMissingWhere;
+    }
+
     // Regex to match raw SQL DELETE statements
     private static final Pattern PATTERN_DELETE =
             Pattern.compile("(?i)\\bDELETE\\s+FROM\\s+([a-zA-Z0-9_`]+)(?:\\s+WHERE\\b|\\s*(?:;|\"|'|\\)))?", Pattern.CASE_INSENSITIVE);
@@ -46,11 +56,13 @@ public class SqlSafetyRule implements SecurityRule {
         RuleResult r1 = checkSqlInjectionAlwaysTrue(scriptSource);
         if (r1.isFailed()) return r1;
 
-        RuleResult r2 = checkDeleteMissingWhere(scriptSource);
-        if (r2.isFailed()) return r2;
+        if (!allowMissingWhere) {
+            RuleResult r2 = checkDeleteMissingWhere(scriptSource);
+            if (r2.isFailed()) return r2;
 
-        RuleResult r3 = checkUpdateMissingWhere(scriptSource);
-        if (r3.isFailed()) return r3;
+            RuleResult r3 = checkUpdateMissingWhere(scriptSource);
+            if (r3.isFailed()) return r3;
+        }
 
         return RuleResult.pass();
     }

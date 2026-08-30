@@ -12,6 +12,16 @@ public class RedisSafetyRule implements SecurityRule {
 
     public static final RedisSafetyRule INSTANCE = new RedisSafetyRule();
 
+    private final boolean allowDangerousKeys;
+
+    public RedisSafetyRule() {
+        this(false);
+    }
+
+    public RedisSafetyRule(boolean allowDangerousKeys) {
+        this.allowDangerousKeys = allowDangerousKeys;
+    }
+
     private static final Pattern PATTERN_FLUSH =
             Pattern.compile("(FLUSHALL|FLUSHDB|flushAll\\s*\\(|flushDb\\s*\\()", Pattern.CASE_INSENSITIVE);
     private static final Pattern PATTERN_KEYS =
@@ -32,7 +42,7 @@ public class RedisSafetyRule implements SecurityRule {
 
     @Override
     public RuleResult check(String scriptSource) {
-        if (scriptSource == null || scriptSource.trim().isEmpty()) {
+        if (scriptSource == null || scriptSource.trim().isEmpty() || allowDangerousKeys) {
             return RuleResult.pass();
         }
 

@@ -13,6 +13,16 @@ public class SystemSecurityRule implements SecurityRule {
 
     public static final SystemSecurityRule INSTANCE = new SystemSecurityRule();
 
+    private final boolean allowProcessExec;
+
+    public SystemSecurityRule() {
+        this(false);
+    }
+
+    public SystemSecurityRule(boolean allowProcessExec) {
+        this.allowProcessExec = allowProcessExec;
+    }
+
     private static final Pattern PATTERN_SYSTEM_EXIT =
             Pattern.compile("System\\s*\\.\\s*exit", Pattern.CASE_INSENSITIVE);
     private static final Pattern PATTERN_RUNTIME_EXEC =
@@ -38,11 +48,13 @@ public class SystemSecurityRule implements SecurityRule {
         RuleResult r1 = checkSystemExit(scriptSource);
         if (r1.isFailed()) return r1;
 
-        RuleResult r2 = checkCommandExecution(scriptSource);
-        if (r2.isFailed()) return r2;
+        if (!allowProcessExec) {
+            RuleResult r2 = checkCommandExecution(scriptSource);
+            if (r2.isFailed()) return r2;
 
-        RuleResult r3 = checkProcessBuilder(scriptSource);
-        if (r3.isFailed()) return r3;
+            RuleResult r3 = checkProcessBuilder(scriptSource);
+            if (r3.isFailed()) return r3;
+        }
 
         RuleResult r4 = checkUnsafe(scriptSource);
         if (r4.isFailed()) return r4;

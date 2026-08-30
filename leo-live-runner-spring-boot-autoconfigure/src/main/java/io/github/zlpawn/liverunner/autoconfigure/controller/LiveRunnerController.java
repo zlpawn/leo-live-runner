@@ -11,6 +11,7 @@ import io.github.zlpawn.liverunner.core.model.ScriptInfo;
 import io.github.zlpawn.liverunner.core.security.AccessContext;
 import io.github.zlpawn.liverunner.core.security.AccessResult;
 import io.github.zlpawn.liverunner.core.security.LiveRunnerAccessValidator;
+import io.github.zlpawn.liverunner.core.pool.ResizableLinkedBlockingQueue;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * RESTful endpoint controller for Live Runner operations.
@@ -231,6 +233,83 @@ public class LiveRunnerController {
         }
 
         return ResponseEntity.ok(LiveRunnerResponse.success(result, "SUCCESS", 0));
+    }
+
+    /**
+     * 7. Query all current dynamic configurations and live thread pool runtime metrics.
+     */
+    @GetMapping("/config")
+    public ResponseEntity<LiveRunnerResponse<Map<String, Object>>> getConfig(HttpServletRequest request) {
+        AccessContext context = AccessContextBuilder.build(request, "config", null, null, new HashMap<>());
+        AccessResult auth = checkAccess(context);
+        if (!auth.isAllowed()) {
+            return ResponseEntity.status(auth.getCode())
+                    .body(LiveRunnerResponse.fail(auth.getCode(), auth.getMessage(), 0));
+        }
+
+        Map<String, Object> data = new HashMap<>();
+
+        // 1. General configs
+        data.put("enabled", properties.isEnabled());
+        data.put("securityCheckEnabled", properties.isSecurityCheckEnabled());
+        data.put("defaultTimeoutSeconds", properties.getDefaultTimeoutSeconds());
+
+        // 2. Thread pool dynamic configs
+        Map<String, Object> poolConfig = new HashMap<>();
+        poolConfig.put("corePoolSize", properties.getCorePoolSize());
+        poolConfig.put("maxPoolSize", properties.getMaxPoolSize());
+        poolConfig.put("queueCapacity", properties.getQueueCapacity());
+        poolConfig.put("keepAliveSeconds", properties.getKeepAliveSeconds());
+        poolConfig.put("threadNamePrefix", properties.getThreadNamePrefix());
+        poolConfig.put("rejectionPolicy", properties.getRejectionPolicy().name());
+        data.put("threadPoolConfig", poolConfig);
+
+        // 3. Thread pool live runtime metrics
+        if (engine.getExecutorService() instanceof ThreadPoolExecutor) {
+            ThreadPoolExecutor exec = (ThreadPoolExecutor) engine.getExecutorService();
+            Map<String, Object> poolMetrics = new HashMap<>();
+            poolMetrics.put("activeCount", exec.getActiveCount());
+            poolMetrics.put("poolSize", exec.getPoolSize());
+            poolMetrics.put("corePoolSize", exec.getCorePoolSize());
+            poolMetrics.put("maximumPoolSize", exec.getMaximumPoolSize());
+            poolMetrics.put("largestPoolSize", exec.getLargestPoolSize());
+            poolMetrics.put("taskCount", exec.getTaskCount());
+            poolMetrics.put("completedTaskCount", exec.getCompletedTaskCount());
+            poolMetrics.put("queueSize", exec.getQueue().size());
+            poolMetrics.put("queueRemainingCapacity", exec.getQueue().remainingCapacity());
+            if (exec.getQueue() instanceof ResizableLinkedBlockingQueue) {
+                poolMetrics.put("queueCapacity", ((ResizableLinkedBlockingQueue<?>) exec.getQueue()).getCapacity());
+            }
+            data.put("threadPoolRuntime", poolMetrics);
+        }
+
+        // 4. Granular security configs
+        Map<String, Object> securityConfig = new HashMap<>();
+        LiveRunnerProperties.Security sec = properties.getSecurity();
+        if (sec != null) {
+            securityConfig.put("enabled", sec.isEnabled());
+            securityConfig.put("deniedBeans", sec.getDeniedBeans());
+            securityConfig.put("allowedPackages", sec.getAllowedPackages());
+
+            Map<String, Object> sqlConfig = new HashMap<>();
+            sqlConfig.put("allowDdl", sec.getSql().isAllowDdl());
+            sqlConfig.put("allowMissingWhere", sec.getSql().isAllowMissingWhere());
+            sqlConfig.put("maxAffectedRows", sec.getSql().getMaxAffectedRows());
+            sqlConfig.put("maxQueryRows", sec.getSql().getMaxQueryRows());
+            securityConfig.put("sql", sqlConfig);
+
+            Map<String, Object> redisConfig = new HashMap<>();
+            redisConfig.put("allowDangerousKeys", sec.getRedis().isAllowDangerousKeys());
+            securityConfig.put("redis", redisConfig);
+
+            Map<String, Object> systemConfig = new HashMap<>();
+            systemConfig.put("allowProcessExec", sec.getSystem().isAllowProcessExec());
+            systemConfig.put("allowSystemExit", sec.getSystem().isAllowSystemExit());
+            securityConfig.put("system", systemConfig);
+        }
+        data.put("security", securityConfig);
+
+        return ResponseEntity.ok(LiveRunnerResponse.success(data, "SUCCESS", 0));
     }
 
     private AccessResult checkAccess(AccessContext context) {

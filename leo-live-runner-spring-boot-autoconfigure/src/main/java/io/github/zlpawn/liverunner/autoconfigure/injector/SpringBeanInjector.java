@@ -7,6 +7,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
+import io.github.zlpawn.liverunner.autoconfigure.properties.LiveRunnerProperties;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -24,9 +25,15 @@ public class SpringBeanInjector implements Function<Object, Object> {
     private static final Logger log = LoggerFactory.getLogger(SpringBeanInjector.class);
 
     private final ApplicationContext applicationContext;
+    private final LiveRunnerProperties properties;
 
     public SpringBeanInjector(ApplicationContext applicationContext) {
+        this(applicationContext, null);
+    }
+
+    public SpringBeanInjector(ApplicationContext applicationContext, LiveRunnerProperties properties) {
         this.applicationContext = applicationContext;
+        this.properties = properties;
     }
 
     @Override
@@ -90,6 +97,18 @@ public class SpringBeanInjector implements Function<Object, Object> {
         }
 
         if (shouldInject) {
+            // Check denied-beans blacklist if configured
+            if (properties != null && properties.getSecurity() != null) {
+                java.util.List<String> deniedBeans = properties.getSecurity().getDeniedBeans();
+                if (deniedBeans != null && !deniedBeans.isEmpty()) {
+                    if (deniedBeans.contains(specifiedBeanName) || deniedBeans.contains(field.getName())) {
+                        throw new SecurityException("Injection Security Violation: Spring bean [" +
+                                (specifiedBeanName != null ? specifiedBeanName : field.getName()) +
+                                "] is blacklisted in leo.live-runner.security.denied-beans");
+                    }
+                }
+            }
+
             Object bean = resolveBean(field, specifiedBeanName);
             if (bean != null) {
                 field.setAccessible(true);
