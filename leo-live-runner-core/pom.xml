@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zlpawn</groupId>
         <artifactId>leo-live-runner</artifactId>
-        <version>1.0.2</version>
+        <version>1.0.3</version>
     </parent>
 
     <artifactId>leo-live-runner-core</artifactId>

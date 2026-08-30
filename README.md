@@ -67,7 +67,7 @@ flowchart TD
 <dependency>
     <groupId>io.github.zlpawn</groupId>
     <artifactId>leo-live-runner-spring-boot-starter</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.3</version>
 </dependency>
 ```
 
