@@ -37,6 +37,26 @@ public class LiveRunnerProperties {
      */
     private int maxPoolSize = 10;
 
+    /**
+     * Task queue capacity for worker thread pool.
+     */
+    private int queueCapacity = 200;
+
+    /**
+     * Keep-alive time in seconds for idle non-core worker threads.
+     */
+    private int keepAliveSeconds = 60;
+
+    /**
+     * Thread name prefix for worker threads.
+     */
+    private String threadNamePrefix = "LiveRunner-Worker-";
+
+    /**
+     * Rejection policy when thread pool and queue are saturated.
+     */
+    private RejectionPolicyType rejectionPolicy = RejectionPolicyType.CALLER_RUNS;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -75,5 +95,37 @@ public class LiveRunnerProperties {
 
     public void setMaxPoolSize(int maxPoolSize) {
         this.maxPoolSize = maxPoolSize;
+    }
+
+    public int getQueueCapacity() {
+        return queueCapacity;
+    }
+
+    public void setQueueCapacity(int queueCapacity) {
+        this.queueCapacity = queueCapacity;
+    }
+
+    public int getKeepAliveSeconds() {
+        return keepAliveSeconds;
+    }
+
+    public void setKeepAliveSeconds(int keepAliveSeconds) {
+        this.keepAliveSeconds = keepAliveSeconds;
+    }
+
+    public String getThreadNamePrefix() {
+        return threadNamePrefix;
+    }
+
+    public void setThreadNamePrefix(String threadNamePrefix) {
+        this.threadNamePrefix = threadNamePrefix;
+    }
+
+    public RejectionPolicyType getRejectionPolicy() {
+        return rejectionPolicy;
+    }
+
+    public void setRejectionPolicy(RejectionPolicyType rejectionPolicy) {
+        this.rejectionPolicy = rejectionPolicy;
     }
 }

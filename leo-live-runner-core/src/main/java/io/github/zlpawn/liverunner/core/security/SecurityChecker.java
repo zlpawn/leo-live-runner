@@ -5,41 +5,29 @@ import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Multi-layer Security Validator for Live Runner dynamic code.
- * 1. Pre-compilation static keyword / pattern inspection.
+ * 1. Pre-compilation static keyword / pattern inspection via {@link DefaultSecurityCheckerValidator}.
  * 2. Groovy SecureASTCustomizer compilation-level AST receiver & import blacklisting.
  *
  * @author Leo (zlpawn)
  */
 public class SecurityChecker {
 
-    private static final List<Pattern> FORBIDDEN_PATTERNS = Arrays.asList(
-            Pattern.compile("System\\s*\\.\\s*exit", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("Runtime\\s*\\.\\s*getRuntime\\s*\\(\\s*\\)\\s*\\.\\s*exec", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("ProcessBuilder", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("sun\\.misc\\.Unsafe", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("jdk\\.internal\\.misc\\.Unsafe", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("Thread\\s*\\.\\s*currentThread\\s*\\(\\s*\\)\\s*\\.\\s*stop", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("System\\s*\\.\\s*setSecurityManager", Pattern.CASE_INSENSITIVE)
-    );
+    private static final DefaultSecurityCheckerValidator DEFAULT_VALIDATOR = new DefaultSecurityCheckerValidator();
 
     /**
-     * Inspect source code text against forbidden high-risk keywords before compilation.
+     * Inspect source code text against default security rules before compilation.
      */
     public static void checkSourceCode(String scriptSource) {
         if (scriptSource == null || scriptSource.trim().isEmpty()) {
             return;
         }
 
-        for (Pattern p : FORBIDDEN_PATTERNS) {
-            if (p.matcher(scriptSource).find()) {
-                throw new SecurityException("Security Violation: High-risk code pattern [" +
-                        p.pattern() + "] is strictly forbidden in Live Runner.");
-            }
+        CodeValidationResult result = DEFAULT_VALIDATOR.validate(null, scriptSource);
+        if (result != null && result.isDenied()) {
+            throw new SecurityException(result.getReason());
         }
     }
 

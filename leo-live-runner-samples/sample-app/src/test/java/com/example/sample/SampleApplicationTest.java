@@ -43,6 +43,20 @@ public class SampleApplicationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private java.util.concurrent.ExecutorService liveRunnerExecutorService;
+
+    @Test
+    public void testThreadPoolConfigurationAndExecution() {
+        Assertions.assertNotNull(liveRunnerExecutorService);
+        Assertions.assertTrue(liveRunnerExecutorService instanceof java.util.concurrent.ThreadPoolExecutor);
+        java.util.concurrent.ThreadPoolExecutor executor = (java.util.concurrent.ThreadPoolExecutor) liveRunnerExecutorService;
+        Assertions.assertEquals(properties.getCorePoolSize(), executor.getCorePoolSize());
+        Assertions.assertEquals(properties.getMaxPoolSize(), executor.getMaximumPoolSize());
+        Assertions.assertEquals(properties.getQueueCapacity(), executor.getQueue().remainingCapacity() + executor.getQueue().size());
+        Assertions.assertTrue(executor.getRejectedExecutionHandler() instanceof java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy);
+    }
+
     @Test
     public void testMapSignature() throws Exception {
         String scriptKey = "test-map-sig";
@@ -339,5 +353,122 @@ public class SampleApplicationTest {
         ResponseEntity<LiveRunnerResponse<List<ScriptInfo>>> allowRes = secureController.list(request);
         Assertions.assertEquals(HttpStatus.OK, allowRes.getStatusCode());
         Assertions.assertEquals(200, allowRes.getBody().getCode());
+    }
+
+    @Test
+    public void testSqlSafetyRuleBlocksDangerousDmlOperations() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        // 1. Attempt DELETE without WHERE
+        Map<String, Object> delBody = new HashMap<>();
+        delBody.put("scriptSource", "public class EvilDelete { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_account\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> delRes = controller.executeOneShot(request, null, 10, delBody);
+        Assertions.assertEquals(500, delRes.getBody().getCode());
+        Assertions.assertFalse(delRes.getBody().isSuccess());
+        Assertions.assertTrue(delRes.getBody().getMsg().contains("DELETE statement on table [t_account] must explicitly include a WHERE clause"));
+
+        // 2. Attempt UPDATE without WHERE
+        Map<String, Object> updateBody = new HashMap<>();
+        updateBody.put("scriptSource", "public class EvilUpdate { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.executeOneShot(request, null, 10, updateBody);
+        Assertions.assertEquals(500, updateRes.getBody().getCode());
+        Assertions.assertFalse(updateRes.getBody().isSuccess());
+        Assertions.assertTrue(updateRes.getBody().getMsg().contains("UPDATE statement on table [t_account] must explicitly include a WHERE clause"));
+
+        // 3. Attempt 1=1 SQL Injection
+        Map<String, Object> injectBody = new HashMap<>();
+        injectBody.put("scriptSource", "public class EvilInject { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE 1=1\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> injectRes = controller.executeOneShot(request, null, 10, injectBody);
+        Assertions.assertEquals(500, injectRes.getBody().getCode());
+        Assertions.assertFalse(injectRes.getBody().isSuccess());
+        Assertions.assertTrue(injectRes.getBody().getMsg().contains("tautological SQL injection"));
+    }
+
+    @Test
+    public void testSqlDdlSafetyRuleBlocksDdlOperations() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        // 1. Attempt DROP TABLE
+        Map<String, Object> dropBody = new HashMap<>();
+        dropBody.put("scriptSource", "public class EvilDrop { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.execute(\"DROP TABLE t_account\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> dropRes = controller.executeOneShot(request, null, 10, dropBody);
+        Assertions.assertEquals(500, dropRes.getBody().getCode());
+        Assertions.assertFalse(dropRes.getBody().isSuccess());
+        Assertions.assertTrue(dropRes.getBody().getMsg().contains("DROP DATABASE/TABLE/INDEX"));
+
+        // 2. Attempt TRUNCATE TABLE
+        Map<String, Object> truncBody = new HashMap<>();
+        truncBody.put("scriptSource", "public class EvilTruncate { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.execute(\"TRUNCATE TABLE t_account\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> truncRes = controller.executeOneShot(request, null, 10, truncBody);
+        Assertions.assertEquals(500, truncRes.getBody().getCode());
+        Assertions.assertFalse(truncRes.getBody().isSuccess());
+        Assertions.assertTrue(truncRes.getBody().getMsg().contains("TRUNCATE TABLE"));
+    }
+
+    @Test
+    public void testSpringConfigAndRedisSecurityRules() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        // 1. Attempt Spring Environment tampering
+        Map<String, Object> envBody = new HashMap<>();
+        envBody.put("scriptSource", "public class EvilEnv { public void run(org.springframework.core.env.ConfigurableEnvironment env) { env.getPropertySources().remove(\"defaultProperties\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> envRes = controller.executeOneShot(request, null, 10, envBody);
+        Assertions.assertEquals(500, envRes.getBody().getCode());
+        Assertions.assertFalse(envRes.getBody().isSuccess());
+        Assertions.assertTrue(envRes.getBody().getMsg().contains("PropertySources"));
+
+        // 2. Attempt Redis KEYS *
+        Map<String, Object> keysBody = new HashMap<>();
+        keysBody.put("scriptSource", "public class EvilRedisKeys { public void run(org.springframework.data.redis.core.StringRedisTemplate redis) { redis.keys(\"*\"); } }");
+        ResponseEntity<LiveRunnerResponse<Object>> keysRes = controller.executeOneShot(request, null, 10, keysBody);
+        Assertions.assertEquals(500, keysRes.getBody().getCode());
+        Assertions.assertFalse(keysRes.getBody().isSuccess());
+        Assertions.assertTrue(keysRes.getBody().getMsg().contains("KEYS *"));
+    }
+
+    @Test
+    public void testCustomCodeValidatorChain() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        io.github.zlpawn.liverunner.core.security.LiveRunnerCodeValidator customCodeValidator = (scriptKey, scriptSource) -> {
+            if (scriptSource != null && scriptSource.contains("BANNED_BIZ_WORD")) {
+                return io.github.zlpawn.liverunner.core.security.CodeValidationResult.deny("Custom Enterprise Policy: BANNED_BIZ_WORD detected!");
+            }
+            return io.github.zlpawn.liverunner.core.security.CodeValidationResult.allow();
+        };
+
+        LiveRunnerEngine customEngine = new LiveRunnerEngine(engine.getRegistry(), null,
+                Collections.singletonList(customCodeValidator));
+
+        LiveRunnerController customController = new LiveRunnerController(customEngine, injector, properties,
+                Collections.emptyList());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("scriptSource", "public class CustomTask { public String run() { String s = \"BANNED_BIZ_WORD\"; return s; } }");
+
+        ResponseEntity<LiveRunnerResponse<Object>> res = customController.executeOneShot(request, null, 10, body);
+        Assertions.assertEquals(500, res.getBody().getCode());
+        Assertions.assertFalse(res.getBody().isSuccess());
+        Assertions.assertTrue(res.getBody().getMsg().contains("Custom Enterprise Policy: BANNED_BIZ_WORD detected!"));
+    }
+
+    @Test
+    public void testListSecurityRulesEndpoint() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        ResponseEntity<LiveRunnerResponse<List<Map<String, Object>>>> res = controller.listSecurityRules(request);
+        Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
+        Assertions.assertEquals(200, res.getBody().getCode());
+        Assertions.assertTrue(res.getBody().isSuccess());
+        List<Map<String, Object>> data = res.getBody().getData();
+        Assertions.assertNotNull(data);
+        Assertions.assertFalse(data.isEmpty());
+        @SuppressWarnings("unchecked")
+        List<String> rules = (List<String>) data.get(0).get("activeRules");
+        Assertions.assertTrue(rules.contains("SYSTEM_SECURITY"));
+        Assertions.assertTrue(rules.contains("SQL_DML_SAFETY"));
+        Assertions.assertTrue(rules.contains("SQL_DDL_SAFETY"));
+        Assertions.assertTrue(rules.contains("SPRING_CONFIG_SECURITY"));
+        Assertions.assertTrue(rules.contains("REDIS_SAFETY"));
+        Assertions.assertTrue(rules.contains("THREAD_SECURITY"));
     }
 }

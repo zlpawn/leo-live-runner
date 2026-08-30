@@ -5,7 +5,9 @@ import io.github.zlpawn.liverunner.core.LiveRunnerClassLoader;
 import io.github.zlpawn.liverunner.core.model.ScriptExecuteResult;
 import io.github.zlpawn.liverunner.core.model.ScriptHolder;
 import io.github.zlpawn.liverunner.core.registry.ScriptRegistry;
-import io.github.zlpawn.liverunner.core.security.SecurityChecker;
+import io.github.zlpawn.liverunner.core.security.CodeValidationResult;
+import io.github.zlpawn.liverunner.core.security.DefaultSecurityCheckerValidator;
+import io.github.zlpawn.liverunner.core.security.LiveRunnerCodeValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Function;
@@ -31,15 +36,33 @@ public class LiveRunnerEngine {
 
     private final ScriptRegistry registry;
     private final ExecutorService executorService;
+    private final List<LiveRunnerCodeValidator> codeValidators = new CopyOnWriteArrayList<>();
     private volatile boolean securityCheckEnabled = true;
 
     public LiveRunnerEngine(ScriptRegistry registry) {
+        this(registry, createDefaultExecutor(), Collections.singletonList(new DefaultSecurityCheckerValidator()));
+    }
+
+    public LiveRunnerEngine(ScriptRegistry registry, ExecutorService executorService) {
+        this(registry, executorService, Collections.singletonList(new DefaultSecurityCheckerValidator()));
+    }
+
+    public LiveRunnerEngine(ScriptRegistry registry, ExecutorService executorService, List<LiveRunnerCodeValidator> codeValidators) {
         this.registry = registry;
-        this.executorService = new ThreadPoolExecutor(
+        this.executorService = executorService != null ? executorService : createDefaultExecutor();
+        if (codeValidators != null && !codeValidators.isEmpty()) {
+            this.codeValidators.addAll(codeValidators);
+        } else {
+            this.codeValidators.add(new DefaultSecurityCheckerValidator());
+        }
+    }
+
+    private static ExecutorService createDefaultExecutor() {
+        return new ThreadPoolExecutor(
                 2,
                 10,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(100),
+                new LinkedBlockingQueue<>(200),
                 r -> {
                     Thread t = new Thread(r, "LiveRunner-Worker-" + System.currentTimeMillis());
                     t.setDaemon(true);
@@ -47,11 +70,6 @@ public class LiveRunnerEngine {
                 },
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
-    }
-
-    public LiveRunnerEngine(ScriptRegistry registry, ExecutorService executorService) {
-        this.registry = registry;
-        this.executorService = executorService;
     }
 
     /**
@@ -69,7 +87,7 @@ public class LiveRunnerEngine {
 
         // 1. Security Sandbox Check
         if (securityCheckEnabled) {
-            SecurityChecker.checkSourceCode(scriptSource);
+            checkCodeSecurity(scriptKey, scriptSource);
         }
 
         String md5 = calculateMd5(scriptSource);
@@ -111,12 +129,13 @@ public class LiveRunnerEngine {
 
         // 1. Security Sandbox Check
         if (securityCheckEnabled) {
-            try {
-                SecurityChecker.checkSourceCode(scriptSource);
-            } catch (SecurityException e) {
-                long costMs = System.currentTimeMillis() - startTime;
-                logger.println("\n[SECURITY ERROR]: " + e.getMessage());
-                return ScriptExecuteResult.fail(e.getMessage(), logger.getLogs(), costMs);
+            for (LiveRunnerCodeValidator validator : codeValidators) {
+                CodeValidationResult checkRes = validator.validate("one-shot", scriptSource);
+                if (checkRes != null && checkRes.isDenied()) {
+                    long costMs = System.currentTimeMillis() - startTime;
+                    logger.println("\n[SECURITY ERROR]: " + checkRes.getReason());
+                    return ScriptExecuteResult.fail(checkRes.getReason(), logger.getLogs(), costMs);
+                }
             }
         }
 
@@ -212,6 +231,15 @@ public class LiveRunnerEngine {
         return invoke(scriptKey, null, params, timeoutSeconds);
     }
 
+    private void checkCodeSecurity(String scriptKey, String scriptSource) {
+        for (LiveRunnerCodeValidator validator : codeValidators) {
+            CodeValidationResult checkRes = validator.validate(scriptKey, scriptSource);
+            if (checkRes != null && checkRes.isDenied()) {
+                throw new SecurityException(checkRes.getReason());
+            }
+        }
+    }
+
     private Throwable unwrapException(Throwable e) {
         Throwable current = e;
         while (current != null) {
@@ -243,6 +271,17 @@ public class LiveRunnerEngine {
 
     public void setSecurityCheckEnabled(boolean securityCheckEnabled) {
         this.securityCheckEnabled = securityCheckEnabled;
+    }
+
+    public List<LiveRunnerCodeValidator> getCodeValidators() {
+        return Collections.unmodifiableList(new ArrayList<>(codeValidators));
+    }
+
+    public void setCodeValidators(List<LiveRunnerCodeValidator> validators) {
+        this.codeValidators.clear();
+        if (validators != null) {
+            this.codeValidators.addAll(validators);
+        }
     }
 
     public ScriptRegistry getRegistry() {

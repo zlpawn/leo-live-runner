@@ -201,6 +201,38 @@ public class LiveRunnerController {
         }
     }
 
+    /**
+     * 6. Query currently active security rules and code validators.
+     */
+    @GetMapping("/security-rules")
+    public ResponseEntity<LiveRunnerResponse<List<Map<String, Object>>>> listSecurityRules(HttpServletRequest request) {
+        AccessContext context = AccessContextBuilder.build(request, "security-rules", null, null, new HashMap<>());
+        AccessResult auth = checkAccess(context);
+        if (!auth.isAllowed()) {
+            return ResponseEntity.status(auth.getCode())
+                    .body(LiveRunnerResponse.fail(auth.getCode(), auth.getMessage(), 0));
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (io.github.zlpawn.liverunner.core.security.LiveRunnerCodeValidator validator : engine.getCodeValidators()) {
+            Map<String, Object> valMap = new HashMap<>();
+            valMap.put("validatorClass", validator.getClass().getName());
+            valMap.put("validatorSimpleName", validator.getClass().getSimpleName());
+            if (validator instanceof io.github.zlpawn.liverunner.core.security.DefaultSecurityCheckerValidator) {
+                io.github.zlpawn.liverunner.core.security.DefaultSecurityCheckerValidator defaultVal =
+                        (io.github.zlpawn.liverunner.core.security.DefaultSecurityCheckerValidator) validator;
+                List<String> ruleNames = new ArrayList<>();
+                for (io.github.zlpawn.liverunner.core.security.rule.SecurityRule rule : defaultVal.getRules()) {
+                    ruleNames.add(rule.getName());
+                }
+                valMap.put("activeRules", ruleNames);
+            }
+            result.add(valMap);
+        }
+
+        return ResponseEntity.ok(LiveRunnerResponse.success(result, "SUCCESS", 0));
+    }
+
     private AccessResult checkAccess(AccessContext context) {
         if (!properties.isEnabled()) {
             return AccessResult.deny(403, "Live Runner is disabled by configuration (leo.live-runner.enabled=false).");
