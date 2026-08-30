@@ -37,7 +37,7 @@ public class RedisSafetyRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "REDIS_SAFETY";
+        return SecurityRuleType.REDIS_SAFETY.getCode();
     }
 
     @Override

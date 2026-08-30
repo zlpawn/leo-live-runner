@@ -96,6 +96,7 @@ public class LiveRunnerAutoConfiguration {
                                             ObjectProvider<List<LiveRunnerCodeValidator>> codeValidatorsProvider) {
         List<LiveRunnerCodeValidator> codeValidators = codeValidatorsProvider.getIfAvailable(ArrayList::new);
         AnnotationAwareOrderComparator.sort(codeValidators);
+        io.github.zlpawn.liverunner.core.LiveLogger.setGlobalMaxLogLength(properties.getMaxLogBufferSizeKb() * 1024);
         LiveRunnerEngine engine = new LiveRunnerEngine(scriptRegistry, liveRunnerExecutorService, codeValidators);
         engine.setSecurityCheckEnabled(properties.isSecurityCheckEnabled());
         return engine;

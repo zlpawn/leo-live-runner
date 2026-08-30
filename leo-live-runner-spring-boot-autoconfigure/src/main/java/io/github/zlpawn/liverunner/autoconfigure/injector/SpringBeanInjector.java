@@ -124,20 +124,40 @@ public class SpringBeanInjector implements Function<Object, Object> {
 
     private Object resolveBean(Field field, String specifiedBeanName) {
         try {
+            // 1. Explicit bean name via @Resource(name = "...") or @Qualifier("...")
             if (specifiedBeanName != null && !specifiedBeanName.trim().isEmpty()) {
                 if (applicationContext.containsBean(specifiedBeanName)) {
                     return applicationContext.getBean(specifiedBeanName);
                 }
             }
-            if (applicationContext.containsBean(field.getName())) {
-                Object bean = applicationContext.getBean(field.getName());
+
+            // 2. Field name matching bean in ApplicationContext
+            String fieldName = field.getName();
+            if (applicationContext.containsBean(fieldName)) {
+                Object bean = applicationContext.getBean(fieldName);
                 if (field.getType().isAssignableFrom(bean.getClass())) {
                     return bean;
                 }
             }
+
+            // 3. Lookup by type
             String[] beanNames = applicationContext.getBeanNamesForType(field.getType());
-            if (beanNames.length > 0) {
-                return applicationContext.getBean(field.getType());
+            if (beanNames.length == 1) {
+                return applicationContext.getBean(beanNames[0]);
+            } else if (beanNames.length > 1) {
+                // Multi-candidate: check if any candidate matches fieldName (case-insensitive)
+                for (String name : beanNames) {
+                    if (name.equalsIgnoreCase(fieldName)) {
+                        return applicationContext.getBean(name);
+                    }
+                }
+                // Try standard getBean (which will resolve @Primary if annotated)
+                try {
+                    return applicationContext.getBean(field.getType());
+                } catch (Exception e) {
+                    log.warn("LiveRunner: Multiple beans found for type [{}] ({}) and none matched field name [{}]: {}",
+                            field.getType().getSimpleName(), java.util.Arrays.toString(beanNames), fieldName, e.getMessage());
+                }
             }
         } catch (Exception e) {
             log.warn("LiveRunner: Error looking up bean for field [{}]: {}", field.getName(), e.getMessage());

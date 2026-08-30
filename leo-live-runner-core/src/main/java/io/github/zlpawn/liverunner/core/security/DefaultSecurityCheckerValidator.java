@@ -22,6 +22,7 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
     public DefaultSecurityCheckerValidator() {
         this(Arrays.asList(
                 SystemSecurityRule.INSTANCE,
+                AstSandboxSecurityRule.INSTANCE,
                 ThreadSecurityRule.INSTANCE,
                 SpringConfigSecurityRule.INSTANCE,
                 RedisSafetyRule.INSTANCE,
@@ -39,6 +40,7 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
     public static List<SecurityRule> createDefaultRules(boolean allowDdl, boolean allowMissingWhere, boolean allowDangerousKeys, boolean allowProcessExec) {
         return Arrays.asList(
                 new SystemSecurityRule(allowProcessExec),
+                new AstSandboxSecurityRule(allowProcessExec),
                 ThreadSecurityRule.INSTANCE,
                 SpringConfigSecurityRule.INSTANCE,
                 new RedisSafetyRule(allowDangerousKeys),
@@ -86,6 +88,14 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
     public boolean removeRule(String ruleName) {
         if (ruleName == null) return false;
         return this.rules.removeIf(r -> ruleName.equalsIgnoreCase(r.getName()));
+    }
+
+    /**
+     * Remove a security rule by rule type enum.
+     */
+    public boolean removeRule(SecurityRuleType ruleType) {
+        if (ruleType == null) return false;
+        return removeRule(ruleType.getCode());
     }
 
     /**

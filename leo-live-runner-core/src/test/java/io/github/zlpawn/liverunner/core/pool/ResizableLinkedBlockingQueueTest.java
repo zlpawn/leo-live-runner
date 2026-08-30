@@ -124,4 +124,37 @@ class ResizableLinkedBlockingQueueTest {
         assertEquals(3, list.size());
         assertEquals(0, queue.size());
     }
+
+    @Test
+    void testMultiThreadBlockingPutUnblockedOnExpansion() throws InterruptedException {
+        ResizableLinkedBlockingQueue<String> queue = new ResizableLinkedBlockingQueue<>(1);
+        queue.offer("initial");
+
+        int threadCount = 3;
+        CountDownLatch startLatch = new CountDownLatch(threadCount);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        for (int i = 0; i < threadCount; i++) {
+            final int id = i;
+            new Thread(() -> {
+                try {
+                    startLatch.countDown();
+                    queue.put("item_" + id);
+                    doneLatch.countDown();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }).start();
+        }
+
+        assertTrue(startLatch.await(2, TimeUnit.SECONDS));
+        Thread.sleep(100);
+        assertEquals(threadCount, doneLatch.getCount()); // all 3 blocked
+
+        // Expand capacity by 3 (from 1 to 4) -> signalAll should wake up all 3 threads!
+        queue.setCapacity(4);
+
+        assertTrue(doneLatch.await(2, TimeUnit.SECONDS));
+        assertEquals(4, queue.size());
+    }
 }

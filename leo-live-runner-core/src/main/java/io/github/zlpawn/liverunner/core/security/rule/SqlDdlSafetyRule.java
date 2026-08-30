@@ -33,7 +33,7 @@ public class SqlDdlSafetyRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "SQL_DDL_SAFETY";
+        return SecurityRuleType.SQL_DDL_SAFETY.getCode();
     }
 
     @Override

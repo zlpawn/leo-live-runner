@@ -24,7 +24,7 @@ public class SpringConfigSecurityRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "SPRING_CONFIG_SECURITY";
+        return SecurityRuleType.SPRING_CONFIG_SECURITY.getCode();
     }
 
     @Override

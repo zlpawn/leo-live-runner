@@ -253,6 +253,7 @@ public class LiveRunnerController {
         data.put("enabled", properties.isEnabled());
         data.put("securityCheckEnabled", properties.isSecurityCheckEnabled());
         data.put("defaultTimeoutSeconds", properties.getDefaultTimeoutSeconds());
+        data.put("maxLogBufferSizeKb", properties.getMaxLogBufferSizeKb());
 
         // 2. Thread pool dynamic configs
         Map<String, Object> poolConfig = new HashMap<>();

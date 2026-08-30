@@ -28,6 +28,12 @@ public class LiveRunnerProperties {
     private int defaultTimeoutSeconds = 60;
 
     /**
+     * Max log buffer size in KB for LiveLogger (HTTP response buffering).
+     * Default is 64 KB (adequate for ~1000 lines of logs / stack traces).
+     */
+    private int maxLogBufferSizeKb = 64;
+
+    /**
      * Core worker thread pool size for script execution.
      */
     private int corePoolSize = 2;
@@ -85,6 +91,14 @@ public class LiveRunnerProperties {
 
     public void setDefaultTimeoutSeconds(int defaultTimeoutSeconds) {
         this.defaultTimeoutSeconds = defaultTimeoutSeconds;
+    }
+
+    public int getMaxLogBufferSizeKb() {
+        return maxLogBufferSizeKb;
+    }
+
+    public void setMaxLogBufferSizeKb(int maxLogBufferSizeKb) {
+        this.maxLogBufferSizeKb = maxLogBufferSizeKb;
     }
 
     public int getCorePoolSize() {

@@ -35,22 +35,45 @@ public class SecurityChecker {
      * Build a secure CompilerConfiguration with AST-level blacklisting.
      */
     public static CompilerConfiguration createSecureCompilerConfig() {
+        return createSecureCompilerConfig(false);
+    }
+
+    /**
+     * Build a secure CompilerConfiguration with AST-level blacklisting, respecting process execution preference.
+     *
+     * @param allowProcessExec whether to allow OS command execution / process builder
+     */
+    public static CompilerConfiguration createSecureCompilerConfig(boolean allowProcessExec) {
         CompilerConfiguration config = new CompilerConfiguration();
         LiveRunnerClassLoader.enableParametersIfSupported(config); // Preserve parameter names if supported
 
         SecureASTCustomizer customizer = new SecureASTCustomizer();
-        customizer.setReceiversBlackList(Arrays.asList(
+        java.util.List<String> receiversBlackList = new java.util.ArrayList<>(Arrays.asList(
                 System.class.getName(),
-                Runtime.class.getName(),
-                ProcessBuilder.class.getName(),
                 "sun.misc.Unsafe",
                 "jdk.internal.misc.Unsafe"
         ));
 
+        if (!allowProcessExec) {
+            receiversBlackList.add(Runtime.class.getName());
+            receiversBlackList.add(ProcessBuilder.class.getName());
+        }
+
+        customizer.setReceiversBlackList(receiversBlackList);
+
         customizer.setImportsBlacklist(Arrays.asList(
-                "sun.misc.*",
-                "jdk.internal.*"
+                "sun.misc.Unsafe",
+                "jdk.internal.misc.Unsafe"
         ));
+
+        customizer.setStarImportsBlacklist(Arrays.asList(
+                "sun.misc.*",
+                "jdk.internal.*",
+                "sun.misc.",
+                "jdk.internal."
+        ));
+
+        customizer.setIndirectImportCheckEnabled(true);
 
         config.addCompilationCustomizers(customizer);
         return config;

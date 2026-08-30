@@ -17,12 +17,36 @@ public class LiveLogger implements Serializable {
     private static final Logger slf4j = LoggerFactory.getLogger(LiveLogger.class);
 
     /**
-     * Max log buffer size (512 KB) to prevent runaway loops from exhausting JVM heap.
+     * Default log buffer size (64 KB) to prevent runaway loops from exhausting JVM heap.
      */
-    private static final int MAX_LOG_LENGTH = 512 * 1024;
+    public static final int DEFAULT_MAX_LOG_LENGTH = 64 * 1024;
+    private static volatile int globalMaxLogLength = DEFAULT_MAX_LOG_LENGTH;
 
+    private final int maxLogLength;
     private final StringBuilder buffer = new StringBuilder(1024);
     private boolean truncated = false;
+
+    public LiveLogger() {
+        this(globalMaxLogLength);
+    }
+
+    public LiveLogger(int maxLogLength) {
+        this.maxLogLength = maxLogLength > 0 ? maxLogLength : DEFAULT_MAX_LOG_LENGTH;
+    }
+
+    public static void setGlobalMaxLogLength(int newGlobalMax) {
+        if (newGlobalMax > 0) {
+            globalMaxLogLength = newGlobalMax;
+        }
+    }
+
+    public static int getGlobalMaxLogLength() {
+        return globalMaxLogLength;
+    }
+
+    public int getMaxLogLength() {
+        return maxLogLength;
+    }
 
     public synchronized void println(String message) {
         // 1. Dual-write to host application's SLF4J log system (Logback/Log4j2/ELK)
@@ -35,22 +59,43 @@ public class LiveLogger implements Serializable {
             return;
         }
 
-        if (buffer.length() > MAX_LOG_LENGTH) {
-            buffer.append("\n[WARN: Log buffer limit (512KB) reached. Further logs truncated to prevent OOM.]\n");
+        String toAppend = message != null ? message : "null";
+        int remaining = maxLogLength - buffer.length();
+
+        if (remaining <= 0) {
+            buffer.append("\n[WARN: Log buffer limit (").append(maxLogLength / 1024).append("KB) reached. Further logs truncated to prevent OOM.]\n");
             truncated = true;
             return;
         }
 
-        buffer.append(message).append("\n");
-    }
-
-    public synchronized void print(String message) {
-        if (truncated) {
+        if (toAppend.length() + 1 > remaining) {
+            int subLen = Math.max(0, remaining - 1);
+            if (subLen > 0) {
+                buffer.append(toAppend, 0, Math.min(toAppend.length(), subLen));
+            }
+            buffer.append("\n[WARN: Log buffer limit (").append(maxLogLength / 1024).append("KB) reached. Further logs truncated to prevent OOM.]\n");
+            truncated = true;
             return;
         }
 
-        if (buffer.length() > MAX_LOG_LENGTH) {
-            buffer.append("\n[WARN: Log buffer limit (512KB) reached. Further logs truncated to prevent OOM.]\n");
+        buffer.append(toAppend).append("\n");
+    }
+
+    public synchronized void print(String message) {
+        if (truncated || message == null) {
+            return;
+        }
+
+        int remaining = maxLogLength - buffer.length();
+        if (remaining <= 0) {
+            buffer.append("\n[WARN: Log buffer limit (").append(maxLogLength / 1024).append("KB) reached. Further logs truncated to prevent OOM.]\n");
+            truncated = true;
+            return;
+        }
+
+        if (message.length() > remaining) {
+            buffer.append(message, 0, remaining);
+            buffer.append("\n[WARN: Log buffer limit (").append(maxLogLength / 1024).append("KB) reached. Further logs truncated to prevent OOM.]\n");
             truncated = true;
             return;
         }

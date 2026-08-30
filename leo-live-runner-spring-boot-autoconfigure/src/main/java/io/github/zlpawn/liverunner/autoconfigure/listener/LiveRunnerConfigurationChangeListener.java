@@ -57,6 +57,10 @@ public class LiveRunnerConfigurationChangeListener {
                     log.info("LiveRunner: Reloaded default security rules with latest allow-xxx properties.");
                 }
             }
+
+            // 4. Reload LiveLogger buffer size
+            io.github.zlpawn.liverunner.core.LiveLogger.setGlobalMaxLogLength(properties.getMaxLogBufferSizeKb() * 1024);
+            log.info("LiveRunner: Reloaded LiveLogger max buffer size to [{} KB]", properties.getMaxLogBufferSizeKb());
         }
     }
 }

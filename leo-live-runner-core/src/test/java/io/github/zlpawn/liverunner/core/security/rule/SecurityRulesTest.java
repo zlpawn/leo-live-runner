@@ -144,13 +144,46 @@ public class SecurityRulesTest {
     }
 
     @Test
+    public void testAstSandboxSecurityRule() {
+        // System.exit
+        RuleResult r1 = AstSandboxSecurityRule.INSTANCE.check("public class Test { void run() { System.exit(0); } }");
+        Assertions.assertTrue(r1.isFailed());
+        Assertions.assertTrue(r1.getReason().contains("AST Sandbox Violation"));
+
+        // Runtime.getRuntime().exec
+        RuleResult r2 = AstSandboxSecurityRule.INSTANCE.check("public class Test { void run() { Runtime.getRuntime().exec(\"calc\"); } }");
+        Assertions.assertTrue(r2.isFailed());
+        Assertions.assertTrue(r2.getReason().contains("AST Sandbox Violation"));
+
+        // ProcessBuilder
+        RuleResult r3 = AstSandboxSecurityRule.INSTANCE.check("public class Test { void run() { new ProcessBuilder(\"cmd\").start(); } }");
+        Assertions.assertTrue(r3.isFailed());
+        Assertions.assertTrue(r3.getReason().contains("AST Sandbox Violation"));
+
+        // Import Unsafe
+        RuleResult r4 = AstSandboxSecurityRule.INSTANCE.check("import sun.misc.Unsafe;\npublic class Test { void run() {} }");
+        Assertions.assertTrue(r4.isFailed());
+        Assertions.assertTrue(r4.getReason().contains("AST Sandbox Violation"));
+
+        // Safe code
+        RuleResult rSafe = AstSandboxSecurityRule.INSTANCE.check("public class Test { public String run() { return \"SAFE_RESULT\"; } }");
+        Assertions.assertTrue(rSafe.isPassed());
+        Assertions.assertFalse(rSafe.isFailed());
+    }
+
+    @Test
     public void testDefaultSecurityCheckerValidatorRuleManagement() {
         DefaultSecurityCheckerValidator validator = new DefaultSecurityCheckerValidator();
-        Assertions.assertEquals(6, validator.getRules().size());
+        Assertions.assertEquals(7, validator.getRules().size());
 
-        // Remove a rule
+        // Remove a rule using String
         boolean removed = validator.removeRule("SQL_DDL_SAFETY");
         Assertions.assertTrue(removed);
+        Assertions.assertEquals(6, validator.getRules().size());
+
+        // Remove a rule using SecurityRuleType enum
+        boolean removedEnum = validator.removeRule(SecurityRuleType.AST_SANDBOX_SECURITY);
+        Assertions.assertTrue(removedEnum);
         Assertions.assertEquals(5, validator.getRules().size());
 
         // Add custom rule

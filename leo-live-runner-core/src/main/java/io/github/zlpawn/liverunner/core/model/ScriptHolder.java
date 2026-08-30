@@ -3,10 +3,15 @@ package io.github.zlpawn.liverunner.core.model;
 import io.github.zlpawn.liverunner.core.LiveLogger;
 import io.github.zlpawn.liverunner.core.LiveRunnerClassLoader;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.text.SimpleDateFormat;
+import java.time.*;
+import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -120,19 +125,19 @@ public class ScriptHolder {
                 continue;
             }
 
-            // 2. Full Map injection
-            if (Map.class.isAssignableFrom(type)) {
+            // 2. Name-based parameter extraction from JSON Map
+            String paramName = p.getName();
+            Object rawValue = findParamValue(params, paramName);
+
+            // 3. Full Map injection if name matching didn't hit a specific inner map
+            if (rawValue == null && Map.class.isAssignableFrom(type)) {
                 args[i] = params;
                 continue;
             }
 
-            // 3. Name-based parameter extraction from JSON Map
-            String paramName = p.getName();
-            Object rawValue = findParamValue(params, paramName);
-
             // 4. Positional fallback if name matching didn't hit (e.g. arg0, arg1)
             if (rawValue == null && nonLoggerIndex < paramValuesList.size()) {
-                if (paramName.startsWith("arg") || !params.containsKey(paramName)) {
+                if (paramName.startsWith("arg") || (params != null && !params.containsKey(paramName))) {
                     rawValue = paramValuesList.get(nonLoggerIndex);
                 }
             }
@@ -178,6 +183,7 @@ public class ScriptHolder {
         return null;
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private Object convertType(Object value, Class<?> targetType) {
         if (value == null) {
             if (targetType.isPrimitive()) {
@@ -199,9 +205,12 @@ public class ScriptHolder {
 
         String strVal = value.toString().trim();
 
+        // 1. String
         if (targetType == String.class) {
             return strVal;
         }
+
+        // 2. Numeric and Boolean types
         if (targetType == Long.class || targetType == long.class) {
             if (value instanceof Number) return ((Number) value).longValue();
             return Long.parseLong(strVal);
@@ -231,10 +240,179 @@ public class ScriptHolder {
             return Byte.parseByte(strVal);
         }
         if (targetType == BigDecimal.class) {
+            if (value instanceof Number) return new BigDecimal(value.toString());
             return new BigDecimal(strVal);
+        }
+        if (targetType == BigInteger.class) {
+            if (value instanceof Number) return BigInteger.valueOf(((Number) value).longValue());
+            return new BigInteger(strVal);
+        }
+
+        // 3. Enum types
+        if (targetType.isEnum()) {
+            Class<Enum> enumClass = (Class<Enum>) targetType;
+            try {
+                return Enum.valueOf(enumClass, strVal);
+            } catch (IllegalArgumentException e) {
+                for (Enum<?> constant : enumClass.getEnumConstants()) {
+                    if (constant.name().equalsIgnoreCase(strVal)) {
+                        return constant;
+                    }
+                }
+                if (value instanceof Number) {
+                    int ordinal = ((Number) value).intValue();
+                    Enum<?>[] constants = enumClass.getEnumConstants();
+                    if (ordinal >= 0 && ordinal < constants.length) {
+                        return constants[ordinal];
+                    }
+                }
+                throw e;
+            }
+        }
+
+        // 4. Date (java.util.Date)
+        if (targetType == Date.class) {
+            if (value instanceof Number) {
+                return new Date(((Number) value).longValue());
+            }
+            if (value instanceof TemporalAccessor) {
+                if (value instanceof LocalDateTime) {
+                    return Date.from(((LocalDateTime) value).atZone(ZoneId.systemDefault()).toInstant());
+                }
+                if (value instanceof LocalDate) {
+                    return Date.from(((LocalDate) value).atStartOfDay(ZoneId.systemDefault()).toInstant());
+                }
+                if (value instanceof Instant) {
+                    return Date.from((Instant) value);
+                }
+            }
+            return parseDate(strVal);
+        }
+
+        // 5. Java 8 Date & Time types (LocalDate, LocalDateTime, LocalTime)
+        if (targetType == LocalDate.class) {
+            if (value instanceof LocalDateTime) {
+                return ((LocalDateTime) value).toLocalDate();
+            }
+            if (value instanceof Date) {
+                return ((Date) value).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            }
+            if (value instanceof Number) {
+                return Instant.ofEpochMilli(((Number) value).longValue()).atZone(ZoneId.systemDefault()).toLocalDate();
+            }
+            if (strVal.length() > 10 && (strVal.contains("T") || strVal.contains(" "))) {
+                return LocalDate.parse(strVal.substring(0, 10));
+            }
+            return LocalDate.parse(strVal);
+        }
+
+        if (targetType == LocalDateTime.class) {
+            if (value instanceof LocalDate) {
+                return ((LocalDate) value).atStartOfDay();
+            }
+            if (value instanceof Date) {
+                return ((Date) value).toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+            }
+            if (value instanceof Number) {
+                return Instant.ofEpochMilli(((Number) value).longValue()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            }
+            if (strVal.contains(" ")) {
+                return LocalDateTime.parse(strVal.replace(' ', 'T'));
+            }
+            if (strVal.length() == 10) {
+                return LocalDate.parse(strVal).atStartOfDay();
+            }
+            return LocalDateTime.parse(strVal);
+        }
+
+        if (targetType == LocalTime.class) {
+            if (value instanceof LocalDateTime) {
+                return ((LocalDateTime) value).toLocalTime();
+            }
+            return LocalTime.parse(strVal);
+        }
+
+        // 6. Collections (List, Set, Collection, Iterable)
+        if (List.class.isAssignableFrom(targetType) || Collection.class.equals(targetType) || Iterable.class.equals(targetType)) {
+            if (value instanceof Collection) {
+                return new ArrayList<>((Collection<?>) value);
+            }
+            if (value.getClass().isArray()) {
+                int length = Array.getLength(value);
+                List<Object> list = new ArrayList<>(length);
+                for (int i = 0; i < length; i++) {
+                    list.add(Array.get(value, i));
+                }
+                return list;
+            }
+            if (strVal.startsWith("[") && strVal.endsWith("]")) {
+                String inner = strVal.substring(1, strVal.length() - 1).trim();
+                if (inner.isEmpty()) return new ArrayList<>();
+                return new ArrayList<>(Arrays.asList(inner.split("\\s*,\\s*")));
+            }
+            if (strVal.contains(",")) {
+                return new ArrayList<>(Arrays.asList(strVal.split("\\s*,\\s*")));
+            }
+            return new ArrayList<>(Collections.singletonList(value));
+        }
+
+        if (Set.class.isAssignableFrom(targetType)) {
+            if (value instanceof Collection) {
+                return new LinkedHashSet<>((Collection<?>) value);
+            }
+            if (value.getClass().isArray()) {
+                int length = Array.getLength(value);
+                Set<Object> set = new LinkedHashSet<>(length);
+                for (int i = 0; i < length; i++) {
+                    set.add(Array.get(value, i));
+                }
+                return set;
+            }
+            if (strVal.startsWith("[") && strVal.endsWith("]")) {
+                String inner = strVal.substring(1, strVal.length() - 1).trim();
+                if (inner.isEmpty()) return new LinkedHashSet<>();
+                return new LinkedHashSet<>(Arrays.asList(inner.split("\\s*,\\s*")));
+            }
+            if (strVal.contains(",")) {
+                return new LinkedHashSet<>(Arrays.asList(strVal.split("\\s*,\\s*")));
+            }
+            return new LinkedHashSet<>(Collections.singletonList(value));
+        }
+
+        // 7. Map
+        if (Map.class.isAssignableFrom(targetType) && value instanceof Map) {
+            return value;
         }
 
         return value;
+    }
+
+    private Date parseDate(String strVal) {
+        if (strVal.matches("^\\d+$")) {
+            return new Date(Long.parseLong(strVal));
+        }
+        String[] patterns = {
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+                "yyyy-MM-dd",
+                "yyyy/MM/dd HH:mm:ss",
+                "yyyy/MM/dd"
+        };
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat(pattern);
+                sdf.setLenient(false);
+                return sdf.parse(strVal);
+            } catch (Exception ignored) {
+            }
+        }
+        try {
+            return Date.from(Instant.parse(strVal));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Cannot parse Date string: " + strVal);
+        }
     }
 
     /**

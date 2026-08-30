@@ -59,6 +59,16 @@ public class ResizableLinkedBlockingQueue<E> extends AbstractQueue<E> implements
         }
     }
 
+    private void signalNotFullAll() {
+        final ReentrantLock putLock = this.putLock;
+        putLock.lock();
+        try {
+            notFull.signalAll();
+        } finally {
+            putLock.unlock();
+        }
+    }
+
     private void enqueue(Node<E> node) {
         last = last.next = node;
     }
@@ -88,7 +98,7 @@ public class ResizableLinkedBlockingQueue<E> extends AbstractQueue<E> implements
         int oldCapacity = this.capacity;
         this.capacity = newCapacity;
         if (newCapacity > oldCapacity) {
-            signalNotFull();
+            signalNotFullAll();
         }
     }
 

@@ -141,6 +141,7 @@ public class LiveRunnerEngine {
 
         int finalTimeout = timeoutSeconds > 0 ? timeoutSeconds : 60;
         LiveRunnerClassLoader tempClassLoader = null;
+        Future<Object> future = null;
 
         try {
             tempClassLoader = new LiveRunnerClassLoader(Thread.currentThread().getContextClassLoader());
@@ -154,7 +155,7 @@ public class LiveRunnerEngine {
             ScriptHolder tempHolder = new ScriptHolder("one-shot-temp", 1, calculateMd5(scriptSource),
                     "One-Shot Execution", tempClassLoader, scriptClass, scriptInstance);
 
-            Future<Object> future = executorService.submit(() -> {
+            future = executorService.submit(() -> {
                 try {
                     return tempHolder.invoke(methodName, params, logger);
                 } finally {
@@ -166,6 +167,9 @@ public class LiveRunnerEngine {
             long costMs = System.currentTimeMillis() - startTime;
             return ScriptExecuteResult.success(result, logger.getLogs(), costMs);
         } catch (TimeoutException e) {
+            if (future != null) {
+                future.cancel(true);
+            }
             if (tempClassLoader != null) {
                 tempClassLoader.unload();
             }
@@ -173,6 +177,9 @@ public class LiveRunnerEngine {
             logger.println("\n[ERROR] Execution timeout after " + finalTimeout + " seconds. Cancelled.");
             return ScriptExecuteResult.fail("Execution Timeout (" + finalTimeout + "s)", logger.getLogs(), costMs);
         } catch (Throwable e) {
+            if (future != null) {
+                future.cancel(true);
+            }
             if (tempClassLoader != null) {
                 tempClassLoader.unload();
             }

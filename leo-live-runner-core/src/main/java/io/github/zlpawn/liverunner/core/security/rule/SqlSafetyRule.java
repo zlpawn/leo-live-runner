@@ -44,7 +44,7 @@ public class SqlSafetyRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "SQL_DML_SAFETY";
+        return SecurityRuleType.SQL_DML_SAFETY.getCode();
     }
 
     @Override

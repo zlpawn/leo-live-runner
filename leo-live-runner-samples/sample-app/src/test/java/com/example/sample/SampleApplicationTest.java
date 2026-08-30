@@ -465,6 +465,7 @@ public class SampleApplicationTest {
         @SuppressWarnings("unchecked")
         List<String> rules = (List<String>) data.get(0).get("activeRules");
         Assertions.assertTrue(rules.contains("SYSTEM_SECURITY"));
+        Assertions.assertTrue(rules.contains("AST_SANDBOX_SECURITY"));
         Assertions.assertTrue(rules.contains("SQL_DML_SAFETY"));
         Assertions.assertTrue(rules.contains("SQL_DDL_SAFETY"));
         Assertions.assertTrue(rules.contains("SPRING_CONFIG_SECURITY"));
@@ -485,6 +486,7 @@ public class SampleApplicationTest {
         Assertions.assertEquals(true, data.get("enabled"));
         Assertions.assertEquals(true, data.get("securityCheckEnabled"));
         Assertions.assertEquals(60, data.get("defaultTimeoutSeconds"));
+        Assertions.assertEquals(64, data.get("maxLogBufferSizeKb"));
 
         @SuppressWarnings("unchecked")
         Map<String, Object> threadPoolConfig = (Map<String, Object>) data.get("threadPoolConfig");
@@ -509,5 +511,39 @@ public class SampleApplicationTest {
         Assertions.assertEquals(false, sql.get("allowMissingWhere"));
         Assertions.assertEquals(500, sql.get("maxAffectedRows"));
         Assertions.assertEquals(500, sql.get("maxQueryRows"));
+    }
+
+    public enum PriorityLevel {
+        LOW,
+        MEDIUM,
+        HIGH
+    }
+
+    @Test
+    public void testAdvancedTypeParametersInIntegration() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        Map<String, Object> executeBody = new HashMap<>();
+        executeBody.put("scriptSource", ""
+                + "package com.example.dynamic;\n"
+                + "import com.example.sample.SampleApplicationTest.PriorityLevel;\n"
+                + "import java.time.LocalDateTime;\n"
+                + "import java.util.List;\n"
+                + "public class ComplexTypeTask {\n"
+                + "    public String run(PriorityLevel priority, LocalDateTime scheduleTime, List<String> tags) {\n"
+                + "        return \"PRIORITY:\" + priority.name() + \"_YEAR:\" + scheduleTime.getYear() + \"_TAGS_COUNT:\" + tags.size();\n"
+                + "    }\n"
+                + "}\n");
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("priority", "high");
+        params.put("scheduleTime", "2026-08-30 20:00:00");
+        params.put("tags", "prod,patch,v1");
+        executeBody.put("params", params);
+
+        ResponseEntity<LiveRunnerResponse<Object>> res = controller.executeOneShot(request, null, 10, executeBody);
+        Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
+        Assertions.assertEquals(200, res.getBody().getCode());
+        Assertions.assertEquals("PRIORITY:HIGH_YEAR:2026_TAGS_COUNT:3", res.getBody().getData());
     }
 }

@@ -36,7 +36,7 @@ public class SystemSecurityRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "SYSTEM_SECURITY";
+        return SecurityRuleType.SYSTEM_SECURITY.getCode();
     }
 
     @Override

@@ -19,7 +19,7 @@ public class ThreadSecurityRule implements SecurityRule {
 
     @Override
     public String getName() {
-        return "THREAD_SECURITY";
+        return SecurityRuleType.THREAD_SECURITY.getCode();
     }
 
     @Override
