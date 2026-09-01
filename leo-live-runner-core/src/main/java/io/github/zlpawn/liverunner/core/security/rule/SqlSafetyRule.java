@@ -16,15 +16,45 @@ public class SqlSafetyRule implements SecurityRule {
 
     public static final SqlSafetyRule INSTANCE = new SqlSafetyRule();
 
-    private final boolean allowMissingWhere;
+    private final java.util.function.BooleanSupplier allowMissingWhereSupplier;
+    private final java.util.function.BooleanSupplier readOnlyModeSupplier;
 
     public SqlSafetyRule() {
-        this(false);
+        this(false, true);
     }
 
     public SqlSafetyRule(boolean allowMissingWhere) {
-        this.allowMissingWhere = allowMissingWhere;
+        this(allowMissingWhere, true);
     }
+
+    public SqlSafetyRule(boolean allowMissingWhere, boolean readOnlyMode) {
+        this(() -> allowMissingWhere, () -> readOnlyMode);
+    }
+
+    public SqlSafetyRule(boolean allowMissingWhere, java.util.function.BooleanSupplier readOnlyModeSupplier) {
+        this(() -> allowMissingWhere, readOnlyModeSupplier);
+    }
+
+    public SqlSafetyRule(java.util.function.BooleanSupplier allowMissingWhereSupplier, java.util.function.BooleanSupplier readOnlyModeSupplier) {
+        this.allowMissingWhereSupplier = allowMissingWhereSupplier != null ? allowMissingWhereSupplier : () -> false;
+        this.readOnlyModeSupplier = readOnlyModeSupplier != null ? readOnlyModeSupplier : () -> true;
+    }
+
+    public boolean isAllowMissingWhere() {
+        return allowMissingWhereSupplier != null && allowMissingWhereSupplier.getAsBoolean();
+    }
+
+    public boolean isReadOnlyMode() {
+        return readOnlyModeSupplier != null && readOnlyModeSupplier.getAsBoolean();
+    }
+
+    // Regex to match raw SQL write operations (INSERT, UPDATE, DELETE, REPLACE, MERGE, UPSERT)
+    private static final Pattern PATTERN_SQL_WRITE =
+            Pattern.compile("(?i)\\b(INSERT\\s+(INTO|IGNORE)?|UPDATE\\s+[a-zA-Z0-9_`]+\\s+SET|DELETE\\s+FROM|REPLACE\\s+INTO|MERGE\\s+INTO|UPSERT\\s+INTO)\\b", Pattern.CASE_INSENSITIVE);
+
+    // Regex to match common DAO / Mapper / JdbcTemplate write methods
+    private static final Pattern PATTERN_CODE_SQL_WRITE =
+            Pattern.compile("(\\.(insert|update|delete|deleteById|updateById|save|saveBatch|saveOrUpdate|batchUpdate)\\s*\\()", Pattern.CASE_INSENSITIVE);
 
     // Regex to match raw SQL DELETE statements
     private static final Pattern PATTERN_DELETE =
@@ -53,10 +83,20 @@ public class SqlSafetyRule implements SecurityRule {
             return RuleResult.pass();
         }
 
+        // 1. In read-only mode: block all mutation operations (INSERT, UPDATE, DELETE, etc.)
+        if (isReadOnlyMode()) {
+            RuleResult writeResult = checkSqlWriteOperation(scriptSource);
+            if (writeResult.isFailed()) {
+                return writeResult;
+            }
+        }
+
+        // 2. Base SQL injection check
         RuleResult r1 = checkSqlInjectionAlwaysTrue(scriptSource);
         if (r1.isFailed()) return r1;
 
-        if (!allowMissingWhere) {
+        // 3. If not in readOnlyMode (and allowMissingWhere=false), enforce WHERE clause
+        if (!isReadOnlyMode() && !isAllowMissingWhere()) {
             RuleResult r2 = checkDeleteMissingWhere(scriptSource);
             if (r2.isFailed()) return r2;
 
@@ -64,6 +104,18 @@ public class SqlSafetyRule implements SecurityRule {
             if (r3.isFailed()) return r3;
         }
 
+        return RuleResult.pass();
+    }
+
+    /**
+     * Inspect script for any SQL or ORM write/mutation operations in read-only mode.
+     */
+    public static RuleResult checkSqlWriteOperation(String scriptSource) {
+        if (scriptSource == null) return RuleResult.pass();
+
+        if (PATTERN_SQL_WRITE.matcher(scriptSource).find() || PATTERN_CODE_SQL_WRITE.matcher(scriptSource).find()) {
+            return RuleResult.fail("Read-Only Violation: SQL write operations (INSERT, UPDATE, DELETE, REPLACE) are strictly forbidden in read-only mode. Only SELECT queries are allowed.");
+        }
         return RuleResult.pass();
     }
 

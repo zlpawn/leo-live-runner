@@ -41,7 +41,17 @@ public enum SecurityRuleType {
     /**
      * SQL DDL schema and privilege safety rule.
      */
-    SQL_DDL_SAFETY("SQL_DDL_SAFETY", "SQL DDL and schema/privilege safety inspection rule");
+    SQL_DDL_SAFETY("SQL_DDL_SAFETY", "SQL DDL and schema/privilege safety inspection rule"),
+
+    /**
+     * Message queue produce/send safety inspection rule.
+     */
+    MQ_SAFETY("MQ_SAFETY", "Message queue produce and send safety inspection rule"),
+
+    /**
+     * HTTP / Feign client write operations safety inspection rule.
+     */
+    HTTP_SAFETY("HTTP_SAFETY", "HTTP / Feign client write operations safety inspection rule");
 
     private final String code;
     private final String description;

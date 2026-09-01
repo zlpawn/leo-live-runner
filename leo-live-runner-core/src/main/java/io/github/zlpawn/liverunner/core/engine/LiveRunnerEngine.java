@@ -8,6 +8,8 @@ import io.github.zlpawn.liverunner.core.registry.ScriptRegistry;
 import io.github.zlpawn.liverunner.core.security.CodeValidationResult;
 import io.github.zlpawn.liverunner.core.security.DefaultSecurityCheckerValidator;
 import io.github.zlpawn.liverunner.core.security.LiveRunnerCodeValidator;
+import io.github.zlpawn.liverunner.core.watch.ScriptExecutionHandle;
+import io.github.zlpawn.liverunner.core.watch.ScriptExecutionWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,7 @@ public class LiveRunnerEngine {
     private final ExecutorService executorService;
     private final List<LiveRunnerCodeValidator> codeValidators = new CopyOnWriteArrayList<>();
     private volatile boolean securityCheckEnabled = true;
+    private volatile ScriptExecutionWatch executionWatch;
 
     public LiveRunnerEngine(ScriptRegistry registry) {
         this(registry, createDefaultExecutor(), Collections.singletonList(new DefaultSecurityCheckerValidator()));
@@ -86,7 +89,7 @@ public class LiveRunnerEngine {
         }
 
         // 1. Security Sandbox Check
-        if (securityCheckEnabled) {
+        if (isSecurityCheckEnabled()) {
             checkCodeSecurity(scriptKey, scriptSource);
         }
 
@@ -128,7 +131,7 @@ public class LiveRunnerEngine {
         }
 
         // 1. Security Sandbox Check
-        if (securityCheckEnabled) {
+        if (isSecurityCheckEnabled()) {
             for (LiveRunnerCodeValidator validator : codeValidators) {
                 CodeValidationResult checkRes = validator.validate("one-shot", scriptSource);
                 if (checkRes != null && checkRes.isDenied()) {
@@ -142,6 +145,7 @@ public class LiveRunnerEngine {
         int finalTimeout = timeoutSeconds > 0 ? timeoutSeconds : 60;
         LiveRunnerClassLoader tempClassLoader = null;
         Future<Object> future = null;
+        ScriptExecutionHandle executionHandle = null;
 
         try {
             tempClassLoader = new LiveRunnerClassLoader(Thread.currentThread().getContextClassLoader());
@@ -155,11 +159,22 @@ public class LiveRunnerEngine {
             ScriptHolder tempHolder = new ScriptHolder("one-shot-temp", 1, calculateMd5(scriptSource),
                     "One-Shot Execution", tempClassLoader, scriptClass, scriptInstance);
 
+            final ScriptExecutionHandle submittedHandle = executionWatch != null
+                    ? executionWatch.start("one-shot", tempHolder.getMd5(), finalTimeout)
+                    : null;
+            executionHandle = submittedHandle;
+
             future = executorService.submit(() -> {
                 try {
+                    if (submittedHandle != null) {
+                        submittedHandle.recordThreadName(Thread.currentThread().getName());
+                    }
                     return tempHolder.invoke(methodName, params, logger);
                 } finally {
                     tempHolder.destroy();
+                    if (submittedHandle != null) {
+                        submittedHandle.complete();
+                    }
                 }
             });
 
@@ -167,8 +182,14 @@ public class LiveRunnerEngine {
             long costMs = System.currentTimeMillis() - startTime;
             return ScriptExecuteResult.success(result, logger.getLogs(), costMs);
         } catch (TimeoutException e) {
+            if (executionHandle != null) {
+                executionHandle.markTimedOut();
+            }
             if (future != null) {
                 future.cancel(true);
+            }
+            if (executionHandle != null && future == null) {
+                executionHandle.complete();
             }
             if (tempClassLoader != null) {
                 tempClassLoader.unload();
@@ -177,8 +198,14 @@ public class LiveRunnerEngine {
             logger.println("\n[ERROR] Execution timeout after " + finalTimeout + " seconds. Cancelled.");
             return ScriptExecuteResult.fail("Execution Timeout (" + finalTimeout + "s)", logger.getLogs(), costMs);
         } catch (Throwable e) {
+            if (executionHandle != null && future != null && !future.isDone()) {
+                executionHandle.markTimedOut();
+            }
             if (future != null) {
                 future.cancel(true);
+            }
+            if (executionHandle != null && future == null) {
+                executionHandle.complete();
             }
             if (tempClassLoader != null) {
                 tempClassLoader.unload();
@@ -210,13 +237,30 @@ public class LiveRunnerEngine {
 
         int finalTimeout = timeoutSeconds > 0 ? timeoutSeconds : 60;
 
-        Future<Object> future = executorService.submit(() -> holder.invoke(methodName, params, logger));
+        final ScriptExecutionHandle executionHandle = executionWatch != null
+                ? executionWatch.start(scriptKey, holder.getMd5(), finalTimeout)
+                : null;
+        Future<Object> future = executorService.submit(() -> {
+            try {
+                if (executionHandle != null) {
+                    executionHandle.recordThreadName(Thread.currentThread().getName());
+                }
+                return holder.invoke(methodName, params, logger);
+            } finally {
+                if (executionHandle != null) {
+                    executionHandle.complete();
+                }
+            }
+        });
 
         try {
             Object result = future.get(finalTimeout, TimeUnit.SECONDS);
             long costMs = System.currentTimeMillis() - startTime;
             return ScriptExecuteResult.success(result, logger.getLogs(), costMs);
         } catch (TimeoutException e) {
+            if (executionHandle != null) {
+                executionHandle.markTimedOut();
+            }
             future.cancel(true);
             long costMs = System.currentTimeMillis() - startTime;
             logger.println("\n[ERROR] Execution timeout after " + finalTimeout + " seconds. Cancelled.");
@@ -272,12 +316,19 @@ public class LiveRunnerEngine {
         }
     }
 
+    private volatile java.util.function.BooleanSupplier securityCheckEnabledSupplier;
+
     public boolean isSecurityCheckEnabled() {
-        return securityCheckEnabled;
+        return securityCheckEnabledSupplier != null ? securityCheckEnabledSupplier.getAsBoolean() : securityCheckEnabled;
     }
 
     public void setSecurityCheckEnabled(boolean securityCheckEnabled) {
         this.securityCheckEnabled = securityCheckEnabled;
+        this.securityCheckEnabledSupplier = () -> securityCheckEnabled;
+    }
+
+    public void setSecurityCheckEnabled(java.util.function.BooleanSupplier securityCheckEnabledSupplier) {
+        this.securityCheckEnabledSupplier = securityCheckEnabledSupplier != null ? securityCheckEnabledSupplier : () -> true;
     }
 
     public List<LiveRunnerCodeValidator> getCodeValidators() {
@@ -289,6 +340,14 @@ public class LiveRunnerEngine {
         if (validators != null) {
             this.codeValidators.addAll(validators);
         }
+    }
+
+    public ScriptExecutionWatch getExecutionWatch() {
+        return executionWatch;
+    }
+
+    public void setExecutionWatch(ScriptExecutionWatch executionWatch) {
+        this.executionWatch = executionWatch;
     }
 
     public ScriptRegistry getRegistry() {

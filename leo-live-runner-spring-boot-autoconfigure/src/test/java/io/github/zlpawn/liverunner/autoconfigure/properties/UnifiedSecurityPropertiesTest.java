@@ -29,6 +29,8 @@ class UnifiedSecurityPropertiesTest {
         LiveRunnerProperties.Security sec = properties.getSecurity();
         assertNotNull(sec);
         assertTrue(sec.isEnabled());
+        assertTrue(sec.isReadOnlyMode(), "readOnlyMode must default to true");
+        assertTrue(properties.isReadOnlyMode(), "isReadOnlyMode shortcut must default to true");
         assertNotNull(sec.getDeniedBeans());
         assertTrue(sec.getDeniedBeans().isEmpty(), "deniedBeans must default to empty list []");
         assertEquals(1, sec.getAllowedPackages().size());
@@ -57,12 +59,14 @@ class UnifiedSecurityPropertiesTest {
     @Test
     void testRuleGenerationFromProperties() {
         LiveRunnerProperties properties = new LiveRunnerProperties();
+        properties.getSecurity().setReadOnlyMode(false); // disable read-only mode to test granular permissions
         properties.getSecurity().getSql().setAllowDdl(true);
         properties.getSecurity().getSql().setAllowMissingWhere(true);
         properties.getSecurity().getRedis().setAllowDangerousKeys(true);
         properties.getSecurity().getSystem().setAllowProcessExec(true);
 
         List<SecurityRule> rules = DefaultSecurityCheckerValidator.createDefaultRules(
+                properties.isReadOnlyMode(),
                 properties.getSecurity().getSql().isAllowDdl(),
                 properties.getSecurity().getSql().isAllowMissingWhere(),
                 properties.getSecurity().getRedis().isAllowDangerousKeys(),
@@ -71,7 +75,7 @@ class UnifiedSecurityPropertiesTest {
 
         DefaultSecurityCheckerValidator validator = new DefaultSecurityCheckerValidator(rules);
 
-        // Should pass DDL and missing where when allowed
+        // Should pass DDL and missing where when allowed in non-readonly mode
         assertTrue(validator.validate("test", "DROP TABLE user;").isAllowed());
         assertTrue(validator.validate("test", "DELETE FROM user;").isAllowed());
         assertTrue(validator.validate("test", "redis.flushAll();").isAllowed());

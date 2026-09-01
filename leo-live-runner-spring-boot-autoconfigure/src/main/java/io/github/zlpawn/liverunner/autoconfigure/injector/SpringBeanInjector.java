@@ -97,20 +97,26 @@ public class SpringBeanInjector implements Function<Object, Object> {
         }
 
         if (shouldInject) {
-            // Check denied-beans blacklist if configured
-            if (properties != null && properties.getSecurity() != null) {
-                java.util.List<String> deniedBeans = properties.getSecurity().getDeniedBeans();
-                if (deniedBeans != null && !deniedBeans.isEmpty()) {
-                    if (deniedBeans.contains(specifiedBeanName) || deniedBeans.contains(field.getName())) {
-                        throw new SecurityException("Injection Security Violation: Spring bean [" +
-                                (specifiedBeanName != null ? specifiedBeanName : field.getName()) +
-                                "] is blacklisted in leo.live-runner.security.denied-beans");
-                    }
+            // Built-in hardcoded security protection: forbid injecting LiveRunner internal components or container internals
+            checkForbiddenInjection(field, specifiedBeanName);
+
+            // Check user-configured denied-beans blacklist if configured
+            java.util.List<String> deniedBeans = getDynamicDeniedBeans();
+            if (deniedBeans != null && !deniedBeans.isEmpty()) {
+                if (deniedBeans.contains(specifiedBeanName) || deniedBeans.contains(field.getName())) {
+                    throw new SecurityException("Injection Security Violation: Spring bean [" +
+                            (specifiedBeanName != null ? specifiedBeanName : field.getName()) +
+                            "] is blacklisted in leo.live-runner.security.denied-beans");
                 }
             }
 
             Object bean = resolveBean(field, specifiedBeanName);
             if (bean != null) {
+                // Secondary check on the resolved bean instance type
+                if (isLiveRunnerInternalOrContainerClass(bean.getClass())) {
+                    throw new SecurityException("Injection Security Violation: Injecting LiveRunner internal component or Spring container instance [" +
+                            bean.getClass().getName() + "] is strictly forbidden.");
+                }
                 field.setAccessible(true);
                 try {
                     field.set(instance, bean);
@@ -120,6 +126,42 @@ public class SpringBeanInjector implements Function<Object, Object> {
                 }
             }
         }
+    }
+
+    private void checkForbiddenInjection(Field field, String specifiedBeanName) {
+        String targetName = specifiedBeanName != null ? specifiedBeanName : field.getName();
+        if (targetName != null && targetName.toLowerCase().startsWith("liverunner")) {
+            throw new SecurityException("Injection Security Violation: Injecting LiveRunner internal bean [" + targetName + "] is strictly forbidden.");
+        }
+        if (field.getType() != null && isLiveRunnerInternalOrContainerClass(field.getType())) {
+            throw new SecurityException("Injection Security Violation: Injecting LiveRunner internal type [" + field.getType().getName() + "] is strictly forbidden.");
+        }
+    }
+
+    private boolean isLiveRunnerInternalOrContainerClass(Class<?> clazz) {
+        if (clazz == null) return false;
+        String name = clazz.getName();
+        return name.startsWith("io.github.zlpawn.liverunner")
+                || name.contains("ApplicationContext")
+                || name.contains("BeanFactory");
+    }
+
+    private java.util.List<String> getDynamicDeniedBeans() {
+        if (applicationContext != null && applicationContext.getEnvironment() != null) {
+            String prop = applicationContext.getEnvironment().getProperty("leo.live-runner.security.denied-beans");
+            if (prop != null && !prop.trim().isEmpty()) {
+                String[] parts = prop.split(",");
+                java.util.List<String> list = new java.util.ArrayList<>();
+                for (String p : parts) {
+                    if (!p.trim().isEmpty()) list.add(p.trim());
+                }
+                return list;
+            }
+        }
+        if (properties != null && properties.getSecurity() != null) {
+            return properties.getSecurity().getDeniedBeans();
+        }
+        return java.util.Collections.emptyList();
     }
 
     private Object resolveBean(Field field, String specifiedBeanName) {

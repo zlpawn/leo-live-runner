@@ -17,18 +17,23 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import io.github.zlpawn.liverunner.autoconfigure.listener.LiveRunnerConfigurationChangeListener;
 import io.github.zlpawn.liverunner.autoconfigure.pool.LiveRunnerThreadPoolRefresher;
 import io.github.zlpawn.liverunner.core.pool.ResizableLinkedBlockingQueue;
 import io.github.zlpawn.liverunner.core.security.rule.SecurityRule;
-import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import io.github.zlpawn.liverunner.core.watch.DefaultScriptExecutionWatch;
+import io.github.zlpawn.liverunner.core.watch.ScriptExecutionWatch;
+import io.github.zlpawn.liverunner.core.watch.ScriptExecutionWatchSettings;
+import io.github.zlpawn.liverunner.autoconfigure.watch.StuckTaskWatchScheduler;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import org.springframework.core.env.Environment;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 /**
  * Spring Boot AutoConfiguration for Leo Live Runner.
@@ -76,14 +81,39 @@ public class LiveRunnerAutoConfiguration {
         return null;
     }
 
+    @Bean(name = "liveRunnerExecutionWatch")
+    @ConditionalOnMissingBean(ScriptExecutionWatch.class)
+    public DefaultScriptExecutionWatch liveRunnerExecutionWatch(LiveRunnerProperties properties) {
+        return new DefaultScriptExecutionWatch(toWatchSettings(properties));
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    @ConditionalOnMissingBean(StuckTaskWatchScheduler.class)
+    public StuckTaskWatchScheduler liveRunnerStuckTaskWatchScheduler(
+            @Qualifier("liveRunnerExecutionWatch") ScriptExecutionWatch watch,
+            LiveRunnerProperties properties) {
+        StuckTaskWatchScheduler scheduler = new StuckTaskWatchScheduler(
+                watch, () -> toWatchSettings(properties));
+        scheduler.start(properties.getStuckTask().getCheckIntervalSeconds());
+        return scheduler;
+    }
+
     @Bean
     @ConditionalOnMissingBean(LiveRunnerCodeValidator.class)
-    public DefaultSecurityCheckerValidator defaultSecurityCheckerValidator(LiveRunnerProperties properties) {
+    public DefaultSecurityCheckerValidator defaultSecurityCheckerValidator(LiveRunnerProperties properties,
+                                                                            Environment env) {
+        BooleanSupplier readOnlySupplier = () -> resolveBooleanProperty(env, "leo.live-runner.security.read-only-mode", "leo.live-runner.security.readOnlyMode", properties.isReadOnlyMode());
+        BooleanSupplier allowDdlSupplier = () -> resolveBooleanProperty(env, "leo.live-runner.security.sql.allow-ddl", "leo.live-runner.security.sql.allowDdl", properties.getSecurity().getSql().isAllowDdl());
+        BooleanSupplier allowMissingWhereSupplier = () -> resolveBooleanProperty(env, "leo.live-runner.security.sql.allow-missing-where", "leo.live-runner.security.sql.allowMissingWhere", properties.getSecurity().getSql().isAllowMissingWhere());
+        BooleanSupplier allowDangerousKeysSupplier = () -> resolveBooleanProperty(env, "leo.live-runner.security.redis.allow-dangerous-keys", "leo.live-runner.security.redis.allowDangerousKeys", properties.getSecurity().getRedis().isAllowDangerousKeys());
+        BooleanSupplier allowProcessExecSupplier = () -> resolveBooleanProperty(env, "leo.live-runner.security.system.allow-process-exec", "leo.live-runner.security.system.allowProcessExec", properties.getSecurity().getSystem().isAllowProcessExec());
+
         List<SecurityRule> rules = DefaultSecurityCheckerValidator.createDefaultRules(
-                properties.getSecurity().getSql().isAllowDdl(),
-                properties.getSecurity().getSql().isAllowMissingWhere(),
-                properties.getSecurity().getRedis().isAllowDangerousKeys(),
-                properties.getSecurity().getSystem().isAllowProcessExec()
+                readOnlySupplier,
+                allowDdlSupplier,
+                allowMissingWhereSupplier,
+                allowDangerousKeysSupplier,
+                allowProcessExecSupplier
         );
         return new DefaultSecurityCheckerValidator(rules);
     }
@@ -93,32 +123,45 @@ public class LiveRunnerAutoConfiguration {
     public LiveRunnerEngine liveRunnerEngine(ScriptRegistry scriptRegistry,
                                             LiveRunnerProperties properties,
                                             ExecutorService liveRunnerExecutorService,
+                                            ScriptExecutionWatch executionWatch,
+                                            Environment env,
                                             ObjectProvider<List<LiveRunnerCodeValidator>> codeValidatorsProvider) {
         List<LiveRunnerCodeValidator> codeValidators = codeValidatorsProvider.getIfAvailable(ArrayList::new);
         AnnotationAwareOrderComparator.sort(codeValidators);
         io.github.zlpawn.liverunner.core.LiveLogger.setGlobalMaxLogLength(properties.getMaxLogBufferSizeKb() * 1024);
         LiveRunnerEngine engine = new LiveRunnerEngine(scriptRegistry, liveRunnerExecutorService, codeValidators);
-        engine.setSecurityCheckEnabled(properties.isSecurityCheckEnabled());
+        engine.setExecutionWatch(executionWatch);
+        engine.setSecurityCheckEnabled(() -> resolveBooleanProperty(env, "leo.live-runner.security-check-enabled", "leo.live-runner.security.enabled", properties.isSecurityCheckEnabled()));
         return engine;
     }
 
-    @Bean
-    @ConditionalOnMissingBean
-    public LiveRunnerConfigurationChangeListener liveRunnerConfigurationChangeListener(
-            LiveRunnerProperties properties,
-            ObjectProvider<LiveRunnerThreadPoolRefresher> threadPoolRefresherProvider,
-            LiveRunnerEngine engine) {
-        return new LiveRunnerConfigurationChangeListener(
-                properties,
-                threadPoolRefresherProvider.getIfAvailable(),
-                engine
-        );
+    private static boolean resolveBooleanProperty(Environment env, String kebabKey, String camelKey, boolean defaultValue) {
+        if (env != null) {
+            Boolean val = env.getProperty(kebabKey, Boolean.class);
+            if (val == null && camelKey != null) {
+                val = env.getProperty(camelKey, Boolean.class);
+            }
+            if (val != null) {
+                return val;
+            }
+        }
+        return defaultValue;
     }
 
     @Bean
     @ConditionalOnMissingBean
     public SpringBeanInjector springBeanInjector(ApplicationContext applicationContext, LiveRunnerProperties properties) {
         return new SpringBeanInjector(applicationContext, properties);
+    }
+
+    public static ScriptExecutionWatchSettings toWatchSettings(LiveRunnerProperties properties) {
+        ScriptExecutionWatchSettings settings = new ScriptExecutionWatchSettings();
+        LiveRunnerProperties.StuckTask stuckTask = properties.getStuckTask();
+        settings.setEnabled(stuckTask.isDetectionEnabled());
+        settings.setGraceSeconds(stuckTask.getGraceSeconds());
+        settings.setCheckIntervalSeconds(stuckTask.getCheckIntervalSeconds());
+        settings.setMaxRecordedStuckTasks(stuckTask.getMaxRecordedStuckTasks());
+        return settings;
     }
 
     @Bean
@@ -132,8 +175,9 @@ public class LiveRunnerAutoConfiguration {
     public LiveRunnerController liveRunnerController(LiveRunnerEngine engine,
                                                      SpringBeanInjector injector,
                                                      LiveRunnerProperties properties,
+                                                     Environment env,
                                                      ObjectProvider<List<LiveRunnerAccessValidator>> validatorsProvider) {
         List<LiveRunnerAccessValidator> validators = validatorsProvider.getIfAvailable(ArrayList::new);
-        return new LiveRunnerController(engine, injector, properties, validators);
+        return new LiveRunnerController(engine, injector, properties, validators, env);
     }
 }

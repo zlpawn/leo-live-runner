@@ -97,28 +97,35 @@ public class SecurityRulesTest {
 
     @Test
     public void testSqlSafetyRuleDml() {
-        // DELETE without WHERE
-        RuleResult r1 = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_order\"); } }");
+        SqlSafetyRule writeAllowedRule = new SqlSafetyRule(false, false);
+
+        // DELETE without WHERE (in write-allowed mode)
+        RuleResult r1 = writeAllowedRule.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_order\"); } }");
         Assertions.assertTrue(r1.isFailed());
         Assertions.assertTrue(r1.getReason().contains("DELETE statement on table [t_order] must explicitly include a WHERE clause"));
 
-        // UPDATE without WHERE
-        RuleResult r2 = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0\"); } }");
+        // UPDATE without WHERE (in write-allowed mode)
+        RuleResult r2 = writeAllowedRule.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0\"); } }");
         Assertions.assertTrue(r2.isFailed());
         Assertions.assertTrue(r2.getReason().contains("UPDATE statement on table [t_account] must explicitly include a WHERE clause"));
 
         // 1=1 SQL Injection
-        RuleResult r3 = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE 1=1\"); } }");
+        RuleResult r3 = writeAllowedRule.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE 1=1\"); } }");
         Assertions.assertTrue(r3.isFailed());
         Assertions.assertTrue(r3.getReason().contains("tautological SQL injection pattern"));
 
-        // Valid DELETE with WHERE
-        RuleResult r4 = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_order WHERE id = 1001\"); } }");
+        // Valid DELETE with WHERE (in write-allowed mode)
+        RuleResult r4 = writeAllowedRule.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_order WHERE id = 1001\"); } }");
         Assertions.assertTrue(r4.isPassed());
 
-        // Valid UPDATE with WHERE
-        RuleResult r5 = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = balance - 100 WHERE id = 1\"); } }");
+        // Valid UPDATE with WHERE (in write-allowed mode)
+        RuleResult r5 = writeAllowedRule.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = balance - 100 WHERE id = 1\"); } }");
         Assertions.assertTrue(r5.isPassed());
+
+        // Under default read-only instance, all UPDATE/DELETE are blocked
+        RuleResult rReadOnly = SqlSafetyRule.INSTANCE.check("public class Test { void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE id = 1\"); } }");
+        Assertions.assertTrue(rReadOnly.isFailed());
+        Assertions.assertTrue(rReadOnly.getReason().contains("Read-Only Violation"));
     }
 
     @Test
@@ -174,17 +181,17 @@ public class SecurityRulesTest {
     @Test
     public void testDefaultSecurityCheckerValidatorRuleManagement() {
         DefaultSecurityCheckerValidator validator = new DefaultSecurityCheckerValidator();
-        Assertions.assertEquals(7, validator.getRules().size());
+        Assertions.assertEquals(9, validator.getRules().size());
 
         // Remove a rule using String
         boolean removed = validator.removeRule("SQL_DDL_SAFETY");
         Assertions.assertTrue(removed);
-        Assertions.assertEquals(6, validator.getRules().size());
+        Assertions.assertEquals(8, validator.getRules().size());
 
         // Remove a rule using SecurityRuleType enum
         boolean removedEnum = validator.removeRule(SecurityRuleType.AST_SANDBOX_SECURITY);
         Assertions.assertTrue(removedEnum);
-        Assertions.assertEquals(5, validator.getRules().size());
+        Assertions.assertEquals(7, validator.getRules().size());
 
         // Add custom rule
         validator.addRule(new SecurityRule() {

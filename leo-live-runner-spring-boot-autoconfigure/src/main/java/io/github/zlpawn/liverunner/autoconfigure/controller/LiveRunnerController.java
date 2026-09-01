@@ -3,8 +3,11 @@ package io.github.zlpawn.liverunner.autoconfigure.controller;
 import io.github.zlpawn.liverunner.autoconfigure.injector.SpringBeanInjector;
 import io.github.zlpawn.liverunner.autoconfigure.properties.LiveRunnerProperties;
 import io.github.zlpawn.liverunner.autoconfigure.util.AccessContextBuilder;
+import io.github.zlpawn.liverunner.autoconfigure.util.LiveRunnerConfigMetadataResolver;
 import io.github.zlpawn.liverunner.core.engine.LiveRunnerEngine;
+import io.github.zlpawn.liverunner.core.model.LiveRunnerConfigItem;
 import io.github.zlpawn.liverunner.core.model.LiveRunnerResponse;
+import io.github.zlpawn.liverunner.core.model.LiveRunnerStatusItem;
 import io.github.zlpawn.liverunner.core.model.ScriptExecuteResult;
 import io.github.zlpawn.liverunner.core.model.ScriptHolder;
 import io.github.zlpawn.liverunner.core.model.ScriptInfo;
@@ -12,13 +15,17 @@ import io.github.zlpawn.liverunner.core.security.AccessContext;
 import io.github.zlpawn.liverunner.core.security.AccessResult;
 import io.github.zlpawn.liverunner.core.security.LiveRunnerAccessValidator;
 import io.github.zlpawn.liverunner.core.pool.ResizableLinkedBlockingQueue;
+import io.github.zlpawn.liverunner.core.watch.ScriptTaskSnapshot;
+import io.github.zlpawn.liverunner.core.watch.ScriptWatchSnapshot;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +41,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * - POST /invoke/{scriptKey}/{methodName}: Multi-method sub-path invocation
  * - GET /list: List loaded scripts
  * - DELETE /unregister/{scriptKey}: Unregister & unload
+ * - GET /config: Full runtime metrics and dynamic configuration status
  *
  * Security:
  * Enforces access control via pluggable {@link LiveRunnerAccessValidator} chain.
@@ -48,14 +56,25 @@ public class LiveRunnerController {
     private final SpringBeanInjector injector;
     private final LiveRunnerProperties properties;
     private final List<LiveRunnerAccessValidator> accessValidators;
+    private final Environment env;
+    private final LiveRunnerConfigMetadataResolver configMetadataResolver = new LiveRunnerConfigMetadataResolver();
 
     public LiveRunnerController(LiveRunnerEngine engine,
                                 SpringBeanInjector injector,
                                 LiveRunnerProperties properties,
                                 List<LiveRunnerAccessValidator> accessValidators) {
+        this(engine, injector, properties, accessValidators, null);
+    }
+
+    public LiveRunnerController(LiveRunnerEngine engine,
+                                SpringBeanInjector injector,
+                                LiveRunnerProperties properties,
+                                List<LiveRunnerAccessValidator> accessValidators,
+                                Environment env) {
         this.engine = engine;
         this.injector = injector;
         this.properties = properties;
+        this.env = env;
         this.accessValidators = accessValidators != null ? new ArrayList<>(accessValidators) : new ArrayList<>();
         AnnotationAwareOrderComparator.sort(this.accessValidators);
     }
@@ -236,11 +255,30 @@ public class LiveRunnerController {
     }
 
     /**
-     * 7. Query all current dynamic configurations and live thread pool runtime metrics.
+     * 7. Query all configurable properties as a structured list of LiveRunnerConfigItem entities.
+     * Automatically discovered and resolved from @LiveConfigDoc metadata annotations on LiveRunnerProperties.
+     * Dynamic properties reflect real-time Apollo / Environment values.
      */
     @GetMapping("/config")
-    public ResponseEntity<LiveRunnerResponse<Map<String, Object>>> getConfig(HttpServletRequest request) {
+    public ResponseEntity<LiveRunnerResponse<List<LiveRunnerConfigItem>>> getConfig(HttpServletRequest request) {
         AccessContext context = AccessContextBuilder.build(request, "config", null, null, new HashMap<>());
+        AccessResult auth = checkAccess(context);
+        if (!auth.isAllowed()) {
+            return ResponseEntity.status(auth.getCode())
+                    .body(LiveRunnerResponse.fail(auth.getCode(), auth.getMessage(), 0));
+        }
+
+        List<LiveRunnerConfigItem> list = configMetadataResolver.resolveConfigItems(properties, env);
+        return ResponseEntity.ok(LiveRunnerResponse.success(list, "SUCCESS", 0));
+    }
+
+    /**
+     * 8. Query lightweight live runtime metrics with full metadata descriptions and units.
+     * Performance-optimized: Pure O(1) in-memory primitive reads without expensive JVM/OS/GC operations.
+     */
+    @GetMapping("/status")
+    public ResponseEntity<LiveRunnerResponse<Map<String, Object>>> getStatus(HttpServletRequest request) {
+        AccessContext context = AccessContextBuilder.build(request, "status", null, null, new HashMap<>());
         AccessResult auth = checkAccess(context);
         if (!auth.isAllowed()) {
             return ResponseEntity.status(auth.getCode())
@@ -249,68 +287,81 @@ public class LiveRunnerController {
 
         Map<String, Object> data = new HashMap<>();
 
-        // 1. General configs
-        data.put("enabled", properties.isEnabled());
-        data.put("securityCheckEnabled", properties.isSecurityCheckEnabled());
-        data.put("defaultTimeoutSeconds", properties.getDefaultTimeoutSeconds());
-        data.put("maxLogBufferSizeKb", properties.getMaxLogBufferSizeKb());
-
-        // 2. Thread pool dynamic configs
-        Map<String, Object> poolConfig = new HashMap<>();
-        poolConfig.put("corePoolSize", properties.getCorePoolSize());
-        poolConfig.put("maxPoolSize", properties.getMaxPoolSize());
-        poolConfig.put("queueCapacity", properties.getQueueCapacity());
-        poolConfig.put("keepAliveSeconds", properties.getKeepAliveSeconds());
-        poolConfig.put("threadNamePrefix", properties.getThreadNamePrefix());
-        poolConfig.put("rejectionPolicy", properties.getRejectionPolicy().name());
-        data.put("threadPoolConfig", poolConfig);
-
-        // 3. Thread pool live runtime metrics
+        // 1. Lightweight health summary
+        boolean effectiveReadOnly = resolveBooleanProperty("leo.live-runner.security.read-only-mode", "leo.live-runner.security.readOnlyMode", properties.isReadOnlyMode());
+        int activeThreads = 0;
+        int poolSize = 0;
+        int queueSize = 0;
         if (engine.getExecutorService() instanceof ThreadPoolExecutor) {
             ThreadPoolExecutor exec = (ThreadPoolExecutor) engine.getExecutorService();
-            Map<String, Object> poolMetrics = new HashMap<>();
-            poolMetrics.put("activeCount", exec.getActiveCount());
-            poolMetrics.put("poolSize", exec.getPoolSize());
-            poolMetrics.put("corePoolSize", exec.getCorePoolSize());
-            poolMetrics.put("maximumPoolSize", exec.getMaximumPoolSize());
-            poolMetrics.put("largestPoolSize", exec.getLargestPoolSize());
-            poolMetrics.put("taskCount", exec.getTaskCount());
-            poolMetrics.put("completedTaskCount", exec.getCompletedTaskCount());
-            poolMetrics.put("queueSize", exec.getQueue().size());
-            poolMetrics.put("queueRemainingCapacity", exec.getQueue().remainingCapacity());
+            activeThreads = exec.getActiveCount();
+            poolSize = exec.getPoolSize();
+            queueSize = exec.getQueue().size();
+        }
+        int stuckCount = engine.getExecutionWatch() != null ? engine.getExecutionWatch().snapshot().getActiveStuckTaskCount() : 0;
+
+        String summary = String.format("LiveRunner 运行正常 | [模式: %s] | [工作线程: %d活跃/%d池大小, 排队: %d] | [卡死任务: %d]",
+                effectiveReadOnly ? "严格只读模式(仅允许查询)" : "允许写入模式(已放开限制)",
+                activeThreads, poolSize, queueSize, stuckCount);
+        data.put("statusSummary", summary);
+
+        // 2. Structured metric list with description and unit
+        List<LiveRunnerStatusItem> metrics = new ArrayList<>();
+
+        if (engine.getExecutorService() instanceof ThreadPoolExecutor) {
+            ThreadPoolExecutor exec = (ThreadPoolExecutor) engine.getExecutorService();
+            metrics.add(new LiveRunnerStatusItem("threadPool.activeCount", exec.getActiveCount(), "当前正在执行脚本的活跃工作线程数", "threads", "工作线程池监控"));
+            metrics.add(new LiveRunnerStatusItem("threadPool.poolSize", exec.getPoolSize(), "当前工作线程池实际物理线程总数", "threads", "工作线程池监控"));
+            metrics.add(new LiveRunnerStatusItem("threadPool.corePoolSize", exec.getCorePoolSize(), "工作线程池核心常驻线程数", "threads", "工作线程池监控"));
+            metrics.add(new LiveRunnerStatusItem("threadPool.maximumPoolSize", exec.getMaximumPoolSize(), "工作线程池允许创建的最大线程数", "threads", "工作线程池监控"));
+            metrics.add(new LiveRunnerStatusItem("threadPool.queueSize", exec.getQueue().size(), "当前排队等待执行的脚本任务数", "tasks", "工作线程池监控"));
+            metrics.add(new LiveRunnerStatusItem("threadPool.queueRemainingCapacity", exec.getQueue().remainingCapacity(), "任务等待队列剩余可用空位", "tasks", "工作线程池监控"));
             if (exec.getQueue() instanceof ResizableLinkedBlockingQueue) {
-                poolMetrics.put("queueCapacity", ((ResizableLinkedBlockingQueue<?>) exec.getQueue()).getCapacity());
+                metrics.add(new LiveRunnerStatusItem("threadPool.queueCapacity", ((ResizableLinkedBlockingQueue<?>) exec.getQueue()).getCapacity(), "任务等待队列总容量限制", "capacity", "工作线程池监控"));
             }
-            data.put("threadPoolRuntime", poolMetrics);
+            metrics.add(new LiveRunnerStatusItem("threadPool.completedTaskCount", exec.getCompletedTaskCount(), "服务启动以来累计已完成执行的脚本任务总数", "tasks", "工作线程池监控"));
         }
 
-        // 4. Granular security configs
-        Map<String, Object> securityConfig = new HashMap<>();
-        LiveRunnerProperties.Security sec = properties.getSecurity();
-        if (sec != null) {
-            securityConfig.put("enabled", sec.isEnabled());
-            securityConfig.put("deniedBeans", sec.getDeniedBeans());
-            securityConfig.put("allowedPackages", sec.getAllowedPackages());
+        if (engine.getExecutionWatch() != null) {
+            ScriptWatchSnapshot snapshot = engine.getExecutionWatch().snapshot();
+            metrics.add(new LiveRunnerStatusItem("stuckTask.activeStuckTaskCount", snapshot.getActiveStuckTaskCount(), "当前超时后仍在后台运行的卡死任务数量", "tasks", "卡死任务监控"));
+            metrics.add(new LiveRunnerStatusItem("stuckTask.totalTimedOutTaskCount", snapshot.getTotalTimedOutTaskCount(), "历史累计超时的脚本任务总数", "tasks", "卡死任务监控"));
+            metrics.add(new LiveRunnerStatusItem("stuckTask.totalStuckTaskCount", snapshot.getTotalStuckTaskCount(), "历史累计判定为卡死的脚本任务总数", "tasks", "卡死任务监控"));
 
-            Map<String, Object> sqlConfig = new HashMap<>();
-            sqlConfig.put("allowDdl", sec.getSql().isAllowDdl());
-            sqlConfig.put("allowMissingWhere", sec.getSql().isAllowMissingWhere());
-            sqlConfig.put("maxAffectedRows", sec.getSql().getMaxAffectedRows());
-            sqlConfig.put("maxQueryRows", sec.getSql().getMaxQueryRows());
-            securityConfig.put("sql", sqlConfig);
-
-            Map<String, Object> redisConfig = new HashMap<>();
-            redisConfig.put("allowDangerousKeys", sec.getRedis().isAllowDangerousKeys());
-            securityConfig.put("redis", redisConfig);
-
-            Map<String, Object> systemConfig = new HashMap<>();
-            systemConfig.put("allowProcessExec", sec.getSystem().isAllowProcessExec());
-            systemConfig.put("allowSystemExit", sec.getSystem().isAllowSystemExit());
-            securityConfig.put("system", systemConfig);
+            List<Map<String, Object>> stuckTasks = new ArrayList<>();
+            for (ScriptTaskSnapshot task : snapshot.getStuckTasks()) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("taskId", task.getTaskId());
+                item.put("scriptKey", task.getScriptKey());
+                item.put("scriptMd5", task.getScriptMd5());
+                item.put("threadName", task.getThreadName());
+                item.put("timeoutSeconds", task.getTimeoutSeconds());
+                item.put("elapsedSeconds", task.getElapsedSeconds());
+                stuckTasks.add(item);
+            }
+            data.put("stuckTasks", stuckTasks);
+        } else {
+            data.put("stuckTasks", Collections.emptyList());
         }
-        data.put("security", securityConfig);
+
+        metrics.add(new LiveRunnerStatusItem("registry.loadedScriptCount", engine.getRegistry() != null ? engine.getRegistry().size() : 0, "当前内存中已注册常驻的动态脚本总数", "scripts", "脚本注册表"));
+
+        data.put("metrics", metrics);
 
         return ResponseEntity.ok(LiveRunnerResponse.success(data, "SUCCESS", 0));
+    }
+
+    private boolean resolveBooleanProperty(String kebabKey, String camelKey, boolean defaultValue) {
+        if (env != null) {
+            Boolean val = env.getProperty(kebabKey, Boolean.class);
+            if (val == null && camelKey != null) {
+                val = env.getProperty(camelKey, Boolean.class);
+            }
+            if (val != null) {
+                return val;
+            }
+        }
+        return defaultValue;
     }
 
     private AccessResult checkAccess(AccessContext context) {

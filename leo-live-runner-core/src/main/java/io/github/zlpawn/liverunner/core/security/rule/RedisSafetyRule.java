@@ -12,15 +12,41 @@ public class RedisSafetyRule implements SecurityRule {
 
     public static final RedisSafetyRule INSTANCE = new RedisSafetyRule();
 
-    private final boolean allowDangerousKeys;
+    private final java.util.function.BooleanSupplier allowDangerousKeysSupplier;
+    private final java.util.function.BooleanSupplier readOnlyModeSupplier;
 
     public RedisSafetyRule() {
-        this(false);
+        this(false, true);
     }
 
     public RedisSafetyRule(boolean allowDangerousKeys) {
-        this.allowDangerousKeys = allowDangerousKeys;
+        this(allowDangerousKeys, true);
     }
+
+    public RedisSafetyRule(boolean allowDangerousKeys, boolean readOnlyMode) {
+        this(() -> allowDangerousKeys, () -> readOnlyMode);
+    }
+
+    public RedisSafetyRule(boolean allowDangerousKeys, java.util.function.BooleanSupplier readOnlyModeSupplier) {
+        this(() -> allowDangerousKeys, readOnlyModeSupplier);
+    }
+
+    public RedisSafetyRule(java.util.function.BooleanSupplier allowDangerousKeysSupplier, java.util.function.BooleanSupplier readOnlyModeSupplier) {
+        this.allowDangerousKeysSupplier = allowDangerousKeysSupplier != null ? allowDangerousKeysSupplier : () -> false;
+        this.readOnlyModeSupplier = readOnlyModeSupplier != null ? readOnlyModeSupplier : () -> true;
+    }
+
+    public boolean isAllowDangerousKeys() {
+        return allowDangerousKeysSupplier != null && allowDangerousKeysSupplier.getAsBoolean();
+    }
+
+    public boolean isReadOnlyMode() {
+        return readOnlyModeSupplier != null && readOnlyModeSupplier.getAsBoolean();
+    }
+
+    // Regex to match Redis write / modification methods
+    private static final Pattern PATTERN_REDIS_WRITE =
+            Pattern.compile("(\\.(set|setEx|setIfAbsent|delete|unlink|expire|expireAt|persist|hset|hSet|hdel|hDel|hMSet|hIncrBy|hIncrByFloat|lpush|rpush|lpop|rpop|lset|ltrim|zadd|zrem|zremrangeByRank|zremrangeByScore|zincrby|increment|decrement|add|remove|pop|move|rename|renameIfAbsent|getAndSet|getAndDelete|getAndExpire)\\s*\\()", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern PATTERN_FLUSH =
             Pattern.compile("(FLUSHALL|FLUSHDB|flushAll\\s*\\(|flushDb\\s*\\()", Pattern.CASE_INSENSITIVE);
@@ -42,7 +68,19 @@ public class RedisSafetyRule implements SecurityRule {
 
     @Override
     public RuleResult check(String scriptSource) {
-        if (scriptSource == null || scriptSource.trim().isEmpty() || allowDangerousKeys) {
+        if (scriptSource == null || scriptSource.trim().isEmpty()) {
+            return RuleResult.pass();
+        }
+
+        // 1. Read-only mode check for mutation methods
+        if (isReadOnlyMode()) {
+            RuleResult writeResult = checkRedisWriteOperation(scriptSource);
+            if (writeResult.isFailed()) {
+                return writeResult;
+            }
+        }
+
+        if (isAllowDangerousKeys()) {
             return RuleResult.pass();
         }
 
@@ -66,6 +104,17 @@ public class RedisSafetyRule implements SecurityRule {
 
         return RuleResult.pass();
     }
+
+    /**
+     * Inspect script for any Redis write/mutation operations in read-only mode.
+     */
+    public static RuleResult checkRedisWriteOperation(String scriptSource) {
+        if (scriptSource != null && PATTERN_REDIS_WRITE.matcher(scriptSource).find()) {
+            return RuleResult.fail("Read-Only Violation: Redis write/mutation operations (set, delete, expire, hset, lpush, zadd, etc.) are strictly forbidden in read-only mode. Only read operations (get, mget, hget, lrange, zrange, etc.) are allowed.");
+        }
+        return RuleResult.pass();
+    }
+
 
     // ─── Atomic Static Check Methods (Single Responsibility Principle) ───────
 

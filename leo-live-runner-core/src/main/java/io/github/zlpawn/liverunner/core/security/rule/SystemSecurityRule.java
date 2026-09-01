@@ -13,14 +13,22 @@ public class SystemSecurityRule implements SecurityRule {
 
     public static final SystemSecurityRule INSTANCE = new SystemSecurityRule();
 
-    private final boolean allowProcessExec;
+    private final java.util.function.BooleanSupplier allowProcessExecSupplier;
 
     public SystemSecurityRule() {
         this(false);
     }
 
     public SystemSecurityRule(boolean allowProcessExec) {
-        this.allowProcessExec = allowProcessExec;
+        this(() -> allowProcessExec);
+    }
+
+    public SystemSecurityRule(java.util.function.BooleanSupplier allowProcessExecSupplier) {
+        this.allowProcessExecSupplier = allowProcessExecSupplier != null ? allowProcessExecSupplier : () -> false;
+    }
+
+    public boolean isAllowProcessExec() {
+        return allowProcessExecSupplier != null && allowProcessExecSupplier.getAsBoolean();
     }
 
     private static final Pattern PATTERN_SYSTEM_EXIT =
@@ -48,7 +56,7 @@ public class SystemSecurityRule implements SecurityRule {
         RuleResult r1 = checkSystemExit(scriptSource);
         if (r1.isFailed()) return r1;
 
-        if (!allowProcessExec) {
+        if (!isAllowProcessExec()) {
             RuleResult r2 = checkCommandExecution(scriptSource);
             if (r2.isFailed()) return r2;
 

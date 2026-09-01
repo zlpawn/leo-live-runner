@@ -237,7 +237,11 @@ public class SampleApplicationTest {
     @Test
     public void testTransactionalAnnotationAutomaticRollback() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        jdbcTemplate.update("UPDATE t_account SET balance = 1000 WHERE id = 1");
+        properties.getSecurity().setReadOnlyMode(false); // Enable write mode for testing transactional data update
+
+        try {
+            // Setup initial state: balance = 1000
+            jdbcTemplate.update("UPDATE t_account SET balance = 1000 WHERE id = 1");
 
         // 1. Script with @Transactional that throws exception -> must rollback to 1000!
         Map<String, Object> failBody = new HashMap<>();
@@ -294,6 +298,48 @@ public class SampleApplicationTest {
 
         Integer balanceAfterSuccess = jdbcTemplate.queryForObject("SELECT balance FROM t_account WHERE id = 1", Integer.class);
         Assertions.assertEquals(800, balanceAfterSuccess, "Balance should be committed to 800!");
+        } finally {
+            properties.getSecurity().setReadOnlyMode(true);
+        }
+    }
+
+    @Test
+    public void testReadOnlyModeBlocksAllWriteOperations() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        properties.getSecurity().setReadOnlyMode(true);
+
+        // 1. UPDATE with WHERE is blocked in read-only mode
+        Map<String, Object> updateBody = new HashMap<>();
+        updateBody.put("scriptSource", ""
+                + "package com.example.dynamic;\n"
+                + "import org.springframework.jdbc.core.JdbcTemplate;\n"
+                + "public class ReadOnlyWriteTask {\n"
+                + "    private JdbcTemplate jdbcTemplate;\n"
+                + "    public void run() {\n"
+                + "        jdbcTemplate.update(\"UPDATE t_account SET balance = 0 WHERE id = 1\");\n"
+                + "    }\n"
+                + "}\n");
+        ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.executeOneShot(request, null, 10, updateBody);
+        Assertions.assertEquals(500, updateRes.getBody().getCode());
+        Assertions.assertFalse(updateRes.getBody().isSuccess());
+        Assertions.assertTrue(updateRes.getBody().getMsg().contains("Read-Only Violation"));
+
+        // 2. SELECT with WHERE is allowed in read-only mode
+        Map<String, Object> selectBody = new HashMap<>();
+        selectBody.put("scriptSource", ""
+                + "package com.example.dynamic;\n"
+                + "import org.springframework.jdbc.core.JdbcTemplate;\n"
+                + "public class ReadOnlySelectTask {\n"
+                + "    private JdbcTemplate jdbcTemplate;\n"
+                + "    public Object run() {\n"
+                + "        return jdbcTemplate.queryForObject(\"SELECT balance FROM t_account WHERE id = 1\", Integer.class);\n"
+                + "    }\n"
+                + "}\n");
+        ResponseEntity<LiveRunnerResponse<Object>> selectRes = controller.executeOneShot(request, null, 10, selectBody);
+        Assertions.assertEquals(200, selectRes.getBody().getCode());
+        Assertions.assertTrue(selectRes.getBody().isSuccess());
+        Integer currentBalance = jdbcTemplate.queryForObject("SELECT balance FROM t_account WHERE id = 1", Integer.class);
+        Assertions.assertEquals(currentBalance, selectRes.getBody().getData());
     }
 
     @Test
@@ -358,30 +404,35 @@ public class SampleApplicationTest {
     @Test
     public void testSqlSafetyRuleBlocksDangerousDmlOperations() {
         MockHttpServletRequest request = new MockHttpServletRequest();
+        properties.getSecurity().setReadOnlyMode(false); // test granular DML checks when write is permitted
 
-        // 1. Attempt DELETE without WHERE
-        Map<String, Object> delBody = new HashMap<>();
-        delBody.put("scriptSource", "public class EvilDelete { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_account\"); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> delRes = controller.executeOneShot(request, null, 10, delBody);
-        Assertions.assertEquals(500, delRes.getBody().getCode());
-        Assertions.assertFalse(delRes.getBody().isSuccess());
-        Assertions.assertTrue(delRes.getBody().getMsg().contains("DELETE statement on table [t_account] must explicitly include a WHERE clause"));
+        try {
+            // 1. Attempt DELETE without WHERE
+            Map<String, Object> delBody = new HashMap<>();
+            delBody.put("scriptSource", "public class EvilDelete { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"DELETE FROM t_account\"); } }");
+            ResponseEntity<LiveRunnerResponse<Object>> delRes = controller.executeOneShot(request, null, 10, delBody);
+            Assertions.assertEquals(500, delRes.getBody().getCode());
+            Assertions.assertFalse(delRes.getBody().isSuccess());
+            Assertions.assertTrue(delRes.getBody().getMsg().contains("DELETE statement on table [t_account] must explicitly include a WHERE clause"));
 
-        // 2. Attempt UPDATE without WHERE
-        Map<String, Object> updateBody = new HashMap<>();
-        updateBody.put("scriptSource", "public class EvilUpdate { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0\"); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.executeOneShot(request, null, 10, updateBody);
-        Assertions.assertEquals(500, updateRes.getBody().getCode());
-        Assertions.assertFalse(updateRes.getBody().isSuccess());
-        Assertions.assertTrue(updateRes.getBody().getMsg().contains("UPDATE statement on table [t_account] must explicitly include a WHERE clause"));
+            // 2. Attempt UPDATE without WHERE
+            Map<String, Object> updateBody = new HashMap<>();
+            updateBody.put("scriptSource", "public class EvilUpdate { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0\"); } }");
+            ResponseEntity<LiveRunnerResponse<Object>> updateRes = controller.executeOneShot(request, null, 10, updateBody);
+            Assertions.assertEquals(500, updateRes.getBody().getCode());
+            Assertions.assertFalse(updateRes.getBody().isSuccess());
+            Assertions.assertTrue(updateRes.getBody().getMsg().contains("UPDATE statement on table [t_account] must explicitly include a WHERE clause"));
 
-        // 3. Attempt 1=1 SQL Injection
-        Map<String, Object> injectBody = new HashMap<>();
-        injectBody.put("scriptSource", "public class EvilInject { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE 1=1\"); } }");
-        ResponseEntity<LiveRunnerResponse<Object>> injectRes = controller.executeOneShot(request, null, 10, injectBody);
-        Assertions.assertEquals(500, injectRes.getBody().getCode());
-        Assertions.assertFalse(injectRes.getBody().isSuccess());
-        Assertions.assertTrue(injectRes.getBody().getMsg().contains("tautological SQL injection"));
+            // 3. Attempt 1=1 SQL Injection
+            Map<String, Object> injectBody = new HashMap<>();
+            injectBody.put("scriptSource", "public class EvilInject { public void run(org.springframework.jdbc.core.JdbcTemplate jt) { jt.update(\"UPDATE t_account SET balance = 0 WHERE 1=1\"); } }");
+            ResponseEntity<LiveRunnerResponse<Object>> injectRes = controller.executeOneShot(request, null, 10, injectBody);
+            Assertions.assertEquals(500, injectRes.getBody().getCode());
+            Assertions.assertFalse(injectRes.getBody().isSuccess());
+            Assertions.assertTrue(injectRes.getBody().getMsg().contains("tautological SQL injection"));
+        } finally {
+            properties.getSecurity().setReadOnlyMode(true);
+        }
     }
 
     @Test
@@ -476,41 +527,78 @@ public class SampleApplicationTest {
     @Test
     public void testGetConfigEndpoint() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        ResponseEntity<LiveRunnerResponse<Map<String, Object>>> res = controller.getConfig(request);
+        ResponseEntity<LiveRunnerResponse<List<io.github.zlpawn.liverunner.core.model.LiveRunnerConfigItem>>> res = controller.getConfig(request);
+        Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
+        Assertions.assertEquals(200, res.getBody().getCode());
+        Assertions.assertTrue(res.getBody().isSuccess());
+
+        List<io.github.zlpawn.liverunner.core.model.LiveRunnerConfigItem> data = res.getBody().getData();
+        Assertions.assertNotNull(data);
+        Assertions.assertFalse(data.isEmpty());
+
+        // Verify key entities exist and have metadata
+        boolean foundReadOnly = false;
+        boolean foundSqlDdl = false;
+        boolean foundCorePool = false;
+
+        for (io.github.zlpawn.liverunner.core.model.LiveRunnerConfigItem item : data) {
+            Assertions.assertNotNull(item.getKey());
+            Assertions.assertNotNull(item.getDesc());
+            Assertions.assertNotNull(item.getGroup());
+            if ("leo.live-runner.security.read-only-mode".equals(item.getKey())) {
+                foundReadOnly = true;
+                Assertions.assertTrue(item.isDynamic());
+                Assertions.assertEquals(true, item.getValue());
+            } else if ("leo.live-runner.security.sql.allow-ddl".equals(item.getKey())) {
+                foundSqlDdl = true;
+                Assertions.assertTrue(item.isDynamic());
+                Assertions.assertEquals(false, item.getValue());
+            } else if ("leo.live-runner.core-pool-size".equals(item.getKey())) {
+                foundCorePool = true;
+                Assertions.assertEquals("threads", item.getUnit());
+                Assertions.assertEquals(2, item.getValue());
+            }
+        }
+
+        Assertions.assertTrue(foundReadOnly, "leo.live-runner.security.read-only-mode must exist in config list");
+        Assertions.assertTrue(foundSqlDdl, "leo.live-runner.security.sql.allow-ddl must exist in config list");
+        Assertions.assertTrue(foundCorePool, "leo.live-runner.core-pool-size must exist in config list");
+    }
+
+    @Test
+    public void testGetStatusEndpoint() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        ResponseEntity<LiveRunnerResponse<Map<String, Object>>> res = controller.getStatus(request);
         Assertions.assertEquals(HttpStatus.OK, res.getStatusCode());
         Assertions.assertEquals(200, res.getBody().getCode());
         Assertions.assertTrue(res.getBody().isSuccess());
 
         Map<String, Object> data = res.getBody().getData();
         Assertions.assertNotNull(data);
-        Assertions.assertEquals(true, data.get("enabled"));
-        Assertions.assertEquals(true, data.get("securityCheckEnabled"));
-        Assertions.assertEquals(60, data.get("defaultTimeoutSeconds"));
-        Assertions.assertEquals(64, data.get("maxLogBufferSizeKb"));
+        Assertions.assertNotNull(data.get("statusSummary"));
+        Assertions.assertNotNull(data.get("stuckTasks"));
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> threadPoolConfig = (Map<String, Object>) data.get("threadPoolConfig");
-        Assertions.assertNotNull(threadPoolConfig);
-        Assertions.assertEquals(2, threadPoolConfig.get("corePoolSize"));
-        Assertions.assertEquals(10, threadPoolConfig.get("maxPoolSize"));
-        Assertions.assertEquals(200, threadPoolConfig.get("queueCapacity"));
+        List<io.github.zlpawn.liverunner.core.model.LiveRunnerStatusItem> metrics = (List<io.github.zlpawn.liverunner.core.model.LiveRunnerStatusItem>) data.get("metrics");
+        Assertions.assertNotNull(metrics);
+        Assertions.assertFalse(metrics.isEmpty());
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> threadPoolRuntime = (Map<String, Object>) data.get("threadPoolRuntime");
-        Assertions.assertNotNull(threadPoolRuntime);
-        Assertions.assertNotNull(threadPoolRuntime.get("corePoolSize"));
-        Assertions.assertNotNull(threadPoolRuntime.get("queueCapacity"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> security = (Map<String, Object>) data.get("security");
-        Assertions.assertNotNull(security);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> sql = (Map<String, Object>) security.get("sql");
-        Assertions.assertNotNull(sql);
-        Assertions.assertEquals(false, sql.get("allowDdl"));
-        Assertions.assertEquals(false, sql.get("allowMissingWhere"));
-        Assertions.assertEquals(500, sql.get("maxAffectedRows"));
-        Assertions.assertEquals(500, sql.get("maxQueryRows"));
+        boolean foundActiveCount = false;
+        boolean foundStuckCount = false;
+        for (io.github.zlpawn.liverunner.core.model.LiveRunnerStatusItem item : metrics) {
+            Assertions.assertNotNull(item.getName());
+            Assertions.assertNotNull(item.getDesc());
+            Assertions.assertNotNull(item.getGroup());
+            if ("threadPool.activeCount".equals(item.getName())) {
+                foundActiveCount = true;
+                Assertions.assertEquals("threads", item.getUnit());
+            } else if ("stuckTask.activeStuckTaskCount".equals(item.getName())) {
+                foundStuckCount = true;
+                Assertions.assertEquals("tasks", item.getUnit());
+            }
+        }
+        Assertions.assertTrue(foundActiveCount, "threadPool.activeCount must be present in metrics");
+        Assertions.assertTrue(foundStuckCount, "stuckTask.activeStuckTaskCount must be present in metrics");
     }
 
     public enum PriorityLevel {

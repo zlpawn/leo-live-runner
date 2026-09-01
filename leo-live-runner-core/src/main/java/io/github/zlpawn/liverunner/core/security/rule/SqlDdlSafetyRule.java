@@ -12,14 +12,22 @@ public class SqlDdlSafetyRule implements SecurityRule {
 
     public static final SqlDdlSafetyRule INSTANCE = new SqlDdlSafetyRule();
 
-    private final boolean allowDdl;
+    private final java.util.function.BooleanSupplier allowDdlSupplier;
 
     public SqlDdlSafetyRule() {
         this(false);
     }
 
     public SqlDdlSafetyRule(boolean allowDdl) {
-        this.allowDdl = allowDdl;
+        this(() -> allowDdl);
+    }
+
+    public SqlDdlSafetyRule(java.util.function.BooleanSupplier allowDdlSupplier) {
+        this.allowDdlSupplier = allowDdlSupplier != null ? allowDdlSupplier : () -> false;
+    }
+
+    public boolean isAllowDdl() {
+        return allowDdlSupplier != null && allowDdlSupplier.getAsBoolean();
     }
 
     private static final Pattern PATTERN_DROP =
@@ -38,7 +46,7 @@ public class SqlDdlSafetyRule implements SecurityRule {
 
     @Override
     public RuleResult check(String scriptSource) {
-        if (scriptSource == null || scriptSource.trim().isEmpty() || allowDdl) {
+        if (scriptSource == null || scriptSource.trim().isEmpty() || isAllowDdl()) {
             return RuleResult.pass();
         }
 

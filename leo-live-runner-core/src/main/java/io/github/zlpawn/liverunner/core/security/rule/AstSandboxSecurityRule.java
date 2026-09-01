@@ -16,14 +16,22 @@ public class AstSandboxSecurityRule implements SecurityRule {
 
     public static final AstSandboxSecurityRule INSTANCE = new AstSandboxSecurityRule();
 
-    private final boolean allowProcessExec;
+    private final java.util.function.BooleanSupplier allowProcessExecSupplier;
 
     public AstSandboxSecurityRule() {
         this(false);
     }
 
     public AstSandboxSecurityRule(boolean allowProcessExec) {
-        this.allowProcessExec = allowProcessExec;
+        this(() -> allowProcessExec);
+    }
+
+    public AstSandboxSecurityRule(java.util.function.BooleanSupplier allowProcessExecSupplier) {
+        this.allowProcessExecSupplier = allowProcessExecSupplier != null ? allowProcessExecSupplier : () -> false;
+    }
+
+    public boolean isAllowProcessExec() {
+        return allowProcessExecSupplier != null && allowProcessExecSupplier.getAsBoolean();
     }
 
     @Override
@@ -37,7 +45,7 @@ public class AstSandboxSecurityRule implements SecurityRule {
             return RuleResult.pass();
         }
 
-        CompilerConfiguration config = SecurityChecker.createSecureCompilerConfig(allowProcessExec);
+        CompilerConfiguration config = SecurityChecker.createSecureCompilerConfig(isAllowProcessExec());
         try (GroovyClassLoader testLoader = new GroovyClassLoader(Thread.currentThread().getContextClassLoader(), config)) {
             testLoader.parseClass(scriptSource);
             return RuleResult.pass();

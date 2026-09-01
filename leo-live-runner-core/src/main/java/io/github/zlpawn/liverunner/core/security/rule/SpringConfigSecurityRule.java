@@ -22,6 +22,9 @@ public class SpringConfigSecurityRule implements SecurityRule {
     private static final Pattern PATTERN_CONTEXT_LIFECYCLE =
             Pattern.compile("(ConfigurableApplicationContext|AbstractApplicationContext)\\s*\\.[^;]*\\.(close|stop|refresh)\\s*\\(", Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern PATTERN_LIVERUNNER_TAMPERING =
+            Pattern.compile("(\\b(LiveRunnerProperties|LiveRunnerEngine|LiveRunnerController|LiveRunnerAccessValidator|LiveRunnerCodeValidator|DefaultSecurityCheckerValidator)\\b|setSecurityCheckEnabled\\s*\\(|reloadRules\\s*\\(|clearRules\\s*\\(|getBean\\s*\\(\\s*[\"']liveRunner|getBean\\s*\\(\\s*LiveRunner)", Pattern.CASE_INSENSITIVE);
+
     @Override
     public String getName() {
         return SecurityRuleType.SPRING_CONFIG_SECURITY.getCode();
@@ -32,6 +35,9 @@ public class SpringConfigSecurityRule implements SecurityRule {
         if (scriptSource == null || scriptSource.trim().isEmpty()) {
             return RuleResult.pass();
         }
+
+        RuleResult r0 = checkLiveRunnerTampering(scriptSource);
+        if (r0.isFailed()) return r0;
 
         RuleResult r1 = checkEnvironmentTampering(scriptSource);
         if (r1.isFailed()) return r1;
@@ -45,6 +51,13 @@ public class SpringConfigSecurityRule implements SecurityRule {
         RuleResult r4 = checkContextLifecycle(scriptSource);
         if (r4.isFailed()) return r4;
 
+        return RuleResult.pass();
+    }
+
+    public static RuleResult checkLiveRunnerTampering(String scriptSource) {
+        if (scriptSource != null && PATTERN_LIVERUNNER_TAMPERING.matcher(scriptSource).find()) {
+            return RuleResult.fail("Security Violation: Accessing or tampering with LiveRunner internal engine, properties, or security validators is strictly forbidden.");
+        }
         return RuleResult.pass();
     }
 

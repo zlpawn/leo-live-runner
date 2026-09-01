@@ -67,7 +67,7 @@ flowchart TD
 <dependency>
     <groupId>io.github.zlpawn</groupId>
     <artifactId>leo-live-runner-spring-boot-starter</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -80,6 +80,11 @@ leo:
     token-check-enabled: false             # Token 校验默认关闭，生产环境建议配置为 true
     token: "LeoLiveRunnerSecretToken@2026"  # 生产环境专属密钥
     default-timeout-seconds: 60           # 默认执行超时时间 (秒)
+    stuck-task:
+      detection-enabled: true             # 超时后继续观察未真正结束的任务
+      grace-seconds: 60                  # 超时后超过该时长仍未结束则判定 stuck
+      check-interval-seconds: 10         # 检测周期，配置变更后按当前值生效
+      max-recorded-stuck-tasks: 100      # /config 返回的最大明细数量
 ```
 
 ---

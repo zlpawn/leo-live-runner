@@ -7,7 +7,7 @@
 
     <groupId>io.github.zlpawn</groupId>
     <artifactId>leo-live-runner</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
     <packaging>pom</packaging>
 
     <name>leo-live-runner</name>
@@ -160,6 +160,7 @@
                     <publishingServerId>central</publishingServerId>
                     <autoPublish>true</autoPublish>
                     <waitUntil>uploaded</waitUntil>
+                    <excludeArtifacts>sample-app,leo-live-runner-samples</excludeArtifacts>
                 </configuration>
             </plugin>
         </plugins>

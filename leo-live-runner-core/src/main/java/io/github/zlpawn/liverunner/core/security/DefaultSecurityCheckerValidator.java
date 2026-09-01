@@ -27,7 +27,9 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
                 SpringConfigSecurityRule.INSTANCE,
                 RedisSafetyRule.INSTANCE,
                 SqlSafetyRule.INSTANCE,
-                SqlDdlSafetyRule.INSTANCE
+                SqlDdlSafetyRule.INSTANCE,
+                MqSafetyRule.INSTANCE,
+                HttpSafetyRule.INSTANCE
         ));
     }
 
@@ -38,14 +40,33 @@ public class DefaultSecurityCheckerValidator implements LiveRunnerCodeValidator 
     }
 
     public static List<SecurityRule> createDefaultRules(boolean allowDdl, boolean allowMissingWhere, boolean allowDangerousKeys, boolean allowProcessExec) {
+        return createDefaultRules(true, allowDdl, allowMissingWhere, allowDangerousKeys, allowProcessExec);
+    }
+
+    public static List<SecurityRule> createDefaultRules(boolean readOnlyMode, boolean allowDdl, boolean allowMissingWhere, boolean allowDangerousKeys, boolean allowProcessExec) {
+        return createDefaultRules(() -> readOnlyMode, allowDdl, allowMissingWhere, allowDangerousKeys, allowProcessExec);
+    }
+
+    public static List<SecurityRule> createDefaultRules(java.util.function.BooleanSupplier readOnlyModeSupplier, boolean allowDdl, boolean allowMissingWhere, boolean allowDangerousKeys, boolean allowProcessExec) {
+        return createDefaultRules(readOnlyModeSupplier, () -> allowDdl, () -> allowMissingWhere, () -> allowDangerousKeys, () -> allowProcessExec);
+    }
+
+    public static List<SecurityRule> createDefaultRules(
+            java.util.function.BooleanSupplier readOnlyModeSupplier,
+            java.util.function.BooleanSupplier allowDdlSupplier,
+            java.util.function.BooleanSupplier allowMissingWhereSupplier,
+            java.util.function.BooleanSupplier allowDangerousKeysSupplier,
+            java.util.function.BooleanSupplier allowProcessExecSupplier) {
         return Arrays.asList(
-                new SystemSecurityRule(allowProcessExec),
-                new AstSandboxSecurityRule(allowProcessExec),
+                new SystemSecurityRule(allowProcessExecSupplier),
+                new AstSandboxSecurityRule(allowProcessExecSupplier),
                 ThreadSecurityRule.INSTANCE,
                 SpringConfigSecurityRule.INSTANCE,
-                new RedisSafetyRule(allowDangerousKeys),
-                new SqlSafetyRule(allowMissingWhere),
-                new SqlDdlSafetyRule(allowDdl)
+                new RedisSafetyRule(allowDangerousKeysSupplier, readOnlyModeSupplier),
+                new SqlSafetyRule(allowMissingWhereSupplier, readOnlyModeSupplier),
+                new SqlDdlSafetyRule(allowDdlSupplier),
+                new MqSafetyRule(readOnlyModeSupplier),
+                new HttpSafetyRule(readOnlyModeSupplier)
         );
     }
 

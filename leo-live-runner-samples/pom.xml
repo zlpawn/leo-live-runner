@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.zlpawn</groupId>
         <artifactId>leo-live-runner</artifactId>
-        <version>1.0.3</version>
+        <version>1.0.4</version>
     </parent>
 
     <artifactId>leo-live-runner-samples</artifactId>
@@ -23,16 +23,4 @@
     <modules>
         <module>sample-app</module>
     </modules>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.sonatype.central</groupId>
-                <artifactId>central-publishing-maven-plugin</artifactId>
-                <configuration>
-                    <skipPublishing>true</skipPublishing>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>
