@@ -33,3 +33,6 @@ Thumbs.db
 *.log
 *.tmp
 temp/
+
+### AI Skills ###
+skills/**/node_modules/
