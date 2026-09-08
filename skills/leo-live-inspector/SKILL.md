@@ -7,10 +7,11 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 
 本 Skill 专门指导 AI 执行线上生产环境与测试环境的 **全场景数据观测、诊断与配置协同治理（Observe, Diagnose & Configure）**：
 1. **⚡ FAST / Kibana 毫秒级日志检索**：直连内网 ES 网关，快速捞取微服务报错日志、接口真实请求入参 (`request_in`) 与响应结果 (`request_out`)；
-2. **⚙️ Apollo 配置中心线上线下双轨体系（探查、修改与变更参谋）**：直连 Apollo ConfigService 秒级读取全量实时配置；【测试环境】支持热修改发布与两阶段 Diff 确认闭环；【生产环境】坚守“零直写原则”，自动进入变更参谋模式，生成高可读性《线上变更建议单》与 Portal 官方直达链接；
-3. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
-4. **🧭 索引自学习与 Chrome 扩展探针自愈**：初次查询新服务自动通过 Chrome 扩展探针（Leo cookie.txt Locally）提取 ES cluster/index 映射并本地持久化；
-5. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
+2. **📡 Kafka 消息无损只读探查与测试环境模拟投递**：以 Topic 为核心资产，支持【零 Commit、零 Rebalance】秒级拉取线上/测试最新消息，支持分区水位排查与关键词过滤；测试环境支持利用 Sample 模板快速灌入数据模拟上游；
+3. **⚙️ Apollo 配置中心线上线下双轨体系（探查、修改与变更参谋）**：直连 Apollo ConfigService 秒级读取全量实时配置；【测试环境】支持热修改发布与两阶段 Diff 确认闭环；【生产环境】坚守“零直写原则”，自动进入变更参谋模式，生成高可读性《线上变更建议单》与 Portal 官方直达链接；
+4. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
+5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
+6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_query.js` 与 `scripts/apollo_modify.js`）是 AI 专用的后台探查与配置工具**。
@@ -56,8 +57,14 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **"往测试环境 saas 库插一条配置数据"** | `node scripts/test_mysql_query.js saas "INSERT INTO t_config (key_name, value) VALUES ('test_key', 'val')"` | DML 写入，返回 affectedRows + insertId |
 | **"更新测试环境 iot 库的设备状态"** | `node scripts/test_mysql_query.js iot "UPDATE t_device SET status = 0 WHERE sn = 'abc123'"` | 有 WHERE 条件直接执行，返回 changedRows |
 | **"删除测试环境 saas 的过期临时数据"** | `node scripts/test_mysql_query.js saas "DELETE FROM t_temp WHERE created_at < '2026-01-01'"` | 有 WHERE 条件直接执行 |
-| **"在测试环境 saas 建一张临时表"** | `node scripts/test_mysql_query.js saas "CREATE TABLE t_tmp (id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(64))"` | DDL 结构变更，返回执行结果 |
 | **“指定端口 6763 和库名查线上 SQL”** | `node scripts/cloud_mysql_query.js 6763 utopia_scs_recorder "SELECT count(*) FROM image_understanding_detail"` | 线上自定义端口与库名统计输出 |
+| **“查下 beijia-reach-event 最新的 3 条消息 (线上)”** | `node scripts/kafka_query.js -t beijia-reach-event -n 3` | 格式化 JSON 消息体、Partition、Offset 与时间展示 (Zero-Commit) |
+| **“查下【测试环境】工单流转事件消息”** | `node scripts/kafka_query.js -t 工单 -e test -n 3` | 自动匹配测试 Topic 与 Broker 进行无损拉取 |
+| **“看下触达消息的各分区水位/有没有积压”** | `node scripts/kafka_query.js -t 触达 --offsets-only` | 分区 Low/High 水位与消息总数看板 |
+| **“查下包含工单号 T010020260907 的 Kafka 消息”** | `node scripts/kafka_query.js -t 工单 -q "T010020260907"` | 按单号或关键词在消息体内精准过滤 |
+| **“往测试环境发一条工单流转测试消息”** | `node scripts/kafka_send.js -t 工单 --use-sample -s orderCode=T-TEST-001 -s status=已接单` | 自动利用 Sample 模板替换字段并投递至测试集群 |
+| **“往测试环境某个 topic 发送特定 JSON 消息”** | `node scripts/kafka_send.js -t <topic> -d '<json>'` | 写入测试 Broker 并回显 Partition 与 Offset |
+| **“扫描工程目录更新 Kafka 资产沉淀”** | `node scripts/kafka_scan.js -o resources/default_kafka.json` | 批量扫描四大主目录并更新内置资产库 |
 
 ---
 
@@ -261,9 +268,38 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 > 2. **智能目录引导**：若缺少密码，AI 主动引导用户切换至该项目的本地代码根目录（例如 `cd /Users/pa/project/JZ/utopia-scs-saas`），脚本将自动就地从 `application-test.yml` / `.env.test` 解析密码并直连；
 > 3. **验通即静默沉淀**：一旦握手测试成功，系统无感沉淀至 `~/.shrimp/skills/live-inspector/test_databases.json`，后续永久免输。
 
+## 📡 4. Kafka 消息无损只读探查与安全模拟投递 (`scripts/kafka_query.js` & `scripts/kafka_send.js`)
+
+### 4.1 核心设计理念
+1. **以 Topic 为核心资产（扁平化）**：打破“必须先找微服务”的束缚，Topic 全局唯一，直接通过 Topic 名或中文别名即可秒级查询与发送；
+2. **双层持久化机制**：
+   - **内置预置**：[`resources/default_kafka.json`](resources/default_kafka.json)（出厂自带常用主目录 37+ 核心 Topic）；
+   - **本地自学习**：`~/.shrimp/skills/live-inspector/kafka_catalog.json`（支持 `--save` 随时沉淀新项目或自定义 Topic）；
+3. **零 Commit 与零 Rebalance 保障**：
+   - 探查严格采用随机临时 GroupId（`leo-peek-${Date.now()}`）与 `autoCommit: false`；
+   - 严禁任何提交行为，对线上/测试正常消费组完全透明；
+4. **测试环境安全投递与 Mock 上游**：
+   - 默认环境为 `test`，向 `prod` 写入会被强制拦截（必须附加 `--force-danger-confirm`）；
+   - 支持利用 Topic 预存的 `sample` 模板，通过 `-s key=val` 自动替换字段并刷新当前时间戳，实现秒级模拟上游事件；
+5. **多工具联动排障（闭环威力）**：
+   - 从 Kafka 查出的消息自带 `traceId` ➡️ 自动顺藤摸瓜调用 `fast_query.js --traceId` 追查下游消费端的执行日志与 Mermaid 时序交互图！
+
+### 4.2 常用命令速查
+
+| 操作场景 | 推荐命令 | 说明 |
+| :--- | :--- | :--- |
+| **查最新消息 (线上)** | `node scripts/kafka_query.js -t <topic> -n 3` | 默认查线上最新 3 条，格式化回显 JSON 消息 |
+| **查最新消息 (测试)** | `node scripts/kafka_query.js -t <topic> -e test -n 3` | 自动路由至测试环境对应集群与测试 Topic |
+| **查分区水位/积压** | `node scripts/kafka_query.js -t <topic> --offsets-only` | 输出各分区的 Low / High 水位与消息总数看板 |
+| **按单号/关键词筛选** | `node scripts/kafka_query.js -t <topic> -q "<orderId>"` | 在拉取的消息中过滤指定业务关键词 |
+| **指定分区拉取** | `node scripts/kafka_query.js -t <topic> -p 0 -n 2` | 仅从指定分区拉取消息 |
+| **基于模板发送测试消息** | `node scripts/kafka_send.js -t <topic> --use-sample -s status=已完成` | 自动套用 Sample 模板并覆盖指定字段 |
+| **直接发送自定义 JSON** | `node scripts/kafka_send.js -t <topic> -d '{"orderId":"123"}'` | 投递到测试环境并回显 Partition 与 Offset |
+| **全量扫描更新资产** | `node scripts/kafka_scan.js -o resources/default_kafka.json` | 扫描 IOT/HT/ZK/JZ 目录并刷新内置预置库 |
+
 ---
 
-## 📊 4. AI 交付呈现规范
+## 📊 5. AI 交付呈现规范
 
 1. **日志排查交付**：概况元信息 ➕ 结构化明细表格 ➕ 异常原因与堆栈分析；
 2. **TraceId 追溯交付**：**强制绘制清晰的 Mermaid 时序交互图**（展示 上游 -> 微服务 -> DB/Redis/下游）；
@@ -272,7 +308,7 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 
 ---
 
-## 🔌 5. 跨平台 Token/Cookie 凭证获取与 Chrome 插件引导规范
+## 🔌 6. 跨平台 Token/Cookie 凭证获取与 Chrome 插件引导规范
 
 当执行查库或日志自愈遇到 **凭证缺失** 或 **凭证过期（302 重定向）** 时，AI 必须根据用户操作系统（Mac / Windows）主动提供清晰、精准的引导，严禁仅抛出冷冰冰的报错或模糊的 F12 指引：
 
@@ -283,34 +319,29 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 
 ---
 
-### 🖥️ 分平台 Chrome 插件安装与引导流程（首选推荐）
+### 🖥️ 分平台 Chrome 插件手动导入与引导流程（首选推荐）
 
 #### 🍏 macOS 用户引导指引：
-1. **一键自动安装（最推荐）**：在终端执行：
-   ```bash
-   bash ~/.agents/skills/leo-live-inspector/scripts/setup_chrome_ext.sh
-   ```
-   *脚本会自动定位插件目录并复制到剪贴板，同时替您打开 Chrome 扩展管理页。*
-2. **或者手动在 Chrome 加载**：
+1. **手动在 Chrome 加载插件**：
    * 打开 `chrome://extensions/` 并开启右上角【开发者模式】；
    * 点击左上角【加载已解压的扩展程序】；
-   * 按快捷键 `Cmd + Shift + G`，粘贴插件路径：
-     `~/.agents/skills/leo-live-inspector/resources/chrome_extension`（或工程下的 `resources/chrome_extension`），回车并确认。
-3. **获取凭证**：
+   * 按快捷键 `Cmd + Shift + G`，粘贴 AI 给出的插件绝对路径，回车并确认；
+   * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
+     `~/.agents/skills/leo-live-inspector/resources/chrome_extension`（或工程下的 `resources/chrome_extension`）。
+2. **获取凭证**：
    * 打开目标页面（服务云或 FAST）；
    * 点击浏览器右上角拼图中的 **Leo cookie.txt Locally** 图标；
    * 在列表中找到对应 Key（**`cloud_console_token_egg`** 或 **`_secondx`**），点击右侧 **【复制】** 发给 AI；
    * *（或者直接点击【📥 下载 cookies.txt】，脚本会自动从 Downloads 目录读取，免手动粘贴）*。
 
 #### 🪟 Windows 用户引导指引：
-1. **一键自动安装（最推荐）**：
-   * 双击运行 Skill 目录下的 `scripts\setup_chrome_ext.bat`；
-   * *批处理脚本会自动通过 `%~dp0` 动态获取当前盘符的绝对路径并塞入 Windows 剪贴板，同时打开 Chrome 扩展页。*
-2. **或者手动在 Chrome 加载**：
+1. **手动在 Chrome 加载插件**：
    * 打开 `chrome://extensions/` 并开启右上角【开发者模式】；
    * 点击左上角【加载已解压的扩展程序】；
-   * 在弹窗路径栏直接按 `Ctrl + V` 粘贴剪贴板中的路径并回车确认。
-3. **获取凭证**：
+   * 在弹窗路径栏粘贴 AI 给出的插件绝对路径并回车确认；
+   * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
+     `%USERPROFILE%\.agents\skills\leo-live-inspector\resources\chrome_extension`（或工程下的 `resources\chrome_extension`）。
+2. **获取凭证**：
    * 打开服务云或 FAST 页面，点击插件图标；
    * 对应 Key 点击 **【复制】** 发给 AI（或点击【📥 下载 cookies.txt】）。
 
