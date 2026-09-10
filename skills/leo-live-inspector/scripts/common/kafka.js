@@ -180,6 +180,69 @@ export function cleanBrokers(brokerStr) {
 }
 
 /**
+ * 组合 Topic 高水位与消费组 committed offset，计算真实分区级 Lag。
+ * Kafka 未启动消费的分区 committed offset 为 -1，此时用保留窗口起点估算待消费量。
+ */
+export function buildConsumerLagRows({ partitionOffsets = [], committedOffsets = [] }) {
+  const committedByPartition = new Map();
+  for (const item of committedOffsets) {
+    committedByPartition.set(Number(item.partition), Number(item.offset));
+  }
+
+  return [...partitionOffsets]
+    .sort((a, b) => Number(a.partition) - Number(b.partition))
+    .map(item => {
+      const partition = Number(item.partition);
+      const low = Number(item.low);
+      const high = Number(item.high);
+      const rawCommitted = committedByPartition.get(partition);
+      const hasCommitted = Number.isFinite(rawCommitted) && rawCommitted >= 0;
+      const committed = hasCommitted ? rawCommitted : null;
+      const lag = hasCommitted
+        ? Math.max(0, high - committed)
+        : Math.max(0, high - low);
+
+      return { partition, low, high, committed, lag, pendingStart: !hasCommitted };
+    });
+}
+
+/**
+ * 基于两次快照差分计算生产速率、消费速率、积压变化与预计追平时间。
+ */
+export function buildConsumerRateReport({ first, second }) {
+  const sampleSeconds = Math.max(0.001, (second.at - first.at) / 1000);
+  const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0);
+  const produced = sum(second.rows, 'high') - sum(first.rows, 'high');
+  const consumed = sum(second.rows, 'committed') - sum(first.rows, 'committed');
+  const lagDelta = sum(second.rows, 'lag') - sum(first.rows, 'lag');
+  const firstRows = new Map(first.rows.map(row => [row.partition, row]));
+  const catchUpRatePerSecond = lagDelta < 0 ? -lagDelta / sampleSeconds : 0;
+  const currentLag = sum(second.rows, 'lag');
+
+  return {
+    sampleSeconds,
+    produced,
+    consumed,
+    lagDelta,
+    produceRatePerSecond: produced / sampleSeconds,
+    consumeRatePerSecond: consumed / sampleSeconds,
+    catchUpRatePerSecond,
+    catchUpEtaSeconds: catchUpRatePerSecond > 0 && currentLag > 0
+      ? currentLag / catchUpRatePerSecond
+      : (currentLag === 0 ? 0 : null),
+    partitions: second.rows.map(secondRow => {
+      const firstRow = firstRows.get(secondRow.partition) || { high: 0, committed: 0, lag: 0 };
+      return {
+        partition: secondRow.partition,
+        produced: secondRow.high - firstRow.high,
+        consumed: secondRow.committed - firstRow.committed,
+        lagDelta: secondRow.lag - firstRow.lag
+      };
+    })
+  };
+}
+
+/**
  * 创建通用安全 Kafka 客户端实例
  */
 export function createKafkaClient({ brokers, clientId = 'leo-live-inspector' }) {

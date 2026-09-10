@@ -9,6 +9,7 @@
  *   3. 智能路由：支持 Topic 真实名称、别名与中文模糊词解析，自动匹配 Broker；
  *   4. 精准 Seek：获取最新 High Watermark，直接跳转拉取最新 N 条消息；
  *   5. 高级排障：支持 --offsets-only 积压排查，支持 --grep 关键词/单号过滤。
+ *   6. 消费组积压：支持 --group + --lag-only 读取 committed offset 并计算真实 Lag。
  */
 
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,9 @@ import {
   resolveTopic, 
   saveTopicToLocal, 
   createKafkaClient, 
-  cleanBrokers 
+  cleanBrokers,
+  buildConsumerLagRows,
+  buildConsumerRateReport
 } from './common/kafka.js';
 
 function parseArgs() {
@@ -30,6 +33,10 @@ function parseArgs() {
     broker: null,
     fromOffset: null,
     offsetsOnly: false,
+    group: null,
+    lagOnly: false,
+    rate: false,
+    duration: 20,
     grep: null,
     save: false,
     json: false,
@@ -54,6 +61,14 @@ function parseArgs() {
       options.fromOffset = parseInt(args[++i], 10);
     } else if (arg === '--offsets-only') {
       options.offsetsOnly = true;
+    } else if (arg === '-g' || arg === '--group') {
+      options.group = args[++i];
+    } else if (arg === '--lag-only') {
+      options.lagOnly = true;
+    } else if (arg === '--rate') {
+      options.rate = true;
+    } else if (arg === '--duration') {
+      options.duration = parseInt(args[++i], 10);
     } else if (arg === '-q' || arg === '--grep' || arg === '--filter') {
       options.grep = args[++i];
     } else if (arg === '--save') {
@@ -83,6 +98,10 @@ function printHelp() {
   -b, --broker <hosts>        手动指定 Broker 地址 (覆盖配置)
   --from-offset <num>         从指定的绝对 Offset 开始拉取
   --offsets-only              仅输出各分区的 Low / High 水位与消息总数看板
+  -g, --group <groupId>       指定消费组，用于读取 committed offset 并计算真实 Lag
+  --lag-only                  配合 -g 使用，仅输出 High / Committed / Lag 积压看板
+  --rate                      配合 -g 使用，通过两次快照差分输出生产/消费速率
+  --duration <seconds>        配合 --rate 使用，采样时长 (1-60 秒，默认 20)
   -q, --grep <keyword>        按关键词或业务单号在消息内容中筛选
   --save                      将当前查询参数记忆沉淀到 ~/.shrimp 本地持久化配置中
   --json                      以纯 JSON 格式输出消息列表
@@ -98,6 +117,12 @@ function printHelp() {
   # 3. 仅查看各分区位点与消息积压概览
   node scripts/kafka_query.js -t beijia-reach-event --offsets-only
 
+  # 3.1 查看指定消费组真实积压
+  node scripts/kafka_query.js -t beijia-reach-event -g <groupId> --lag-only
+
+  # 3.2 查看消费组生产/消费速率与追平预估
+  node scripts/kafka_query.js -t beijia-reach-event -g <groupId> --rate --duration 20
+
   # 4. 过滤包含指定单号的消息
   node scripts/kafka_query.js -t reach-event -q "T010020260907"
 `);
@@ -109,6 +134,16 @@ async function main() {
   if (options.help || !options.topic) {
     printHelp();
     process.exit(options.help ? 0 : 1);
+  }
+
+  if (options.lagOnly && !options.group) {
+    console.error('❌ --lag-only 需要同时指定 -g <groupId> 消费组。');
+    process.exit(1);
+  }
+
+  if (options.rate && !options.group) {
+    console.error('❌ --rate 需要同时指定 -g <groupId> 消费组。');
+    process.exit(1);
   }
 
   const isTest = ['test', 'qa', 'dev'].includes(options.env.toLowerCase());
@@ -158,14 +193,120 @@ async function main() {
   try {
     await admin.connect();
     partitionOffsets = await admin.fetchTopicOffsets(targetTopic);
-    await admin.disconnect();
+    if (!options.rate && !options.lagOnly) await admin.disconnect();
   } catch (err) {
     console.error(`❌ 连接 Broker 或读取 Topic [${targetTopic}] 元数据失败:`, err.message);
     try { await admin.disconnect(); } catch {}
     process.exit(1);
   }
 
-  // 4. 处理 --offsets-only 概览模式
+  // 4. 处理消费组速率采样模式
+  if (options.rate) {
+    const duration = Math.min(60, Math.max(1, options.duration || 20));
+    const takeSnapshot = async () => {
+      const partitionOffsets = await admin.fetchTopicOffsets(targetTopic);
+      const responses = await admin.fetchOffsets({ groupId: options.group, topics: [targetTopic] });
+      const committedOffsets = responses.find(item => item.topic === targetTopic)?.partitions || [];
+      const rows = buildConsumerLagRows({ partitionOffsets, committedOffsets });
+      return { at: Date.now(), rows };
+    };
+
+    let first;
+    let second;
+    try {
+      first = await takeSnapshot();
+      await new Promise(resolve => setTimeout(resolve, duration * 1000));
+      second = await takeSnapshot();
+    } catch (err) {
+      console.error('❌ 采样消费组 [' + options.group + '] 速率失败:', err.message);
+      try { await admin.disconnect(); } catch {}
+      process.exit(1);
+    }
+    await admin.disconnect();
+
+    const report = buildConsumerRateReport({ first, second });
+    const currentLag = second.rows.reduce((sum, row) => sum + row.lag, 0);
+    if (options.json) {
+      console.log(JSON.stringify({
+        topic: targetTopic,
+        group: options.group,
+        sampleSeconds: report.sampleSeconds,
+        currentLag,
+        produced: report.produced,
+        consumed: report.consumed,
+        lagDelta: report.lagDelta,
+        produceRatePerSecond: report.produceRatePerSecond,
+        consumeRatePerSecond: report.consumeRatePerSecond,
+        catchUpRatePerSecond: report.catchUpRatePerSecond,
+        catchUpEtaSeconds: report.catchUpEtaSeconds,
+        partitions: report.partitions
+      }, null, 2));
+      process.exit(0);
+    }
+
+    const etaText = report.catchUpEtaSeconds === null
+      ? '当前无法追平（积压未下降）'
+      : report.catchUpEtaSeconds === 0 ? '已追平' : String(Math.round(report.catchUpEtaSeconds)) + ' 秒';
+    console.log('📊 消费组速率看板 [' + targetTopic + '] / [' + options.group + ']:');
+    console.log('------------------------------------------------------------------------');
+    console.log('• 采样时长: ' + report.sampleSeconds.toFixed(2) + ' 秒');
+    console.log('• 生产增量: ' + report.produced.toLocaleString() + ' 条 | 生产速率: ' + report.produceRatePerSecond.toFixed(2) + ' 条/秒');
+    console.log('• 消费增量: ' + report.consumed.toLocaleString() + ' 条 | 消费速率: ' + report.consumeRatePerSecond.toFixed(2) + ' 条/秒');
+    console.log('• Lag 变化: ' + report.lagDelta.toLocaleString() + ' 条 | 当前 Lag: ' + currentLag.toLocaleString() + ' 条');
+    console.log('• 预计追平: ' + etaText);
+    console.log('------------------------------------------------------------------------');
+    console.log('| 分区 ID   | 生产增量          | 消费增量          | Lag 变化          |');
+    console.log('------------------------------------------------------------------------');
+    for (const row of report.partitions) {
+      console.log('| P' + String(row.partition).padEnd(8) + '| ' + row.produced.toLocaleString().padEnd(18) + '| ' + row.consumed.toLocaleString().padEnd(18) + '| ' + row.lagDelta.toLocaleString().padEnd(18) + '|');
+    }
+    console.log('------------------------------------------------------------------------\n');
+    process.exit(0);
+  }
+
+  // 5. 处理消费组真实 Lag 模式
+  if (options.lagOnly && options.group) {
+    let committedResult = [];
+    try {
+      committedResult = await admin.fetchOffsets({ groupId: options.group, topics: [targetTopic] });
+    } catch (err) {
+      console.error(`❌ 读取消费组 [${options.group}] committed offset 失败:`, err.message);
+      try { await admin.disconnect(); } catch {}
+      process.exit(1);
+    }
+    await admin.disconnect();
+
+    const committedOffsets = committedResult.find(item => item.topic === targetTopic)?.partitions || [];
+    const lagRows = buildConsumerLagRows({ partitionOffsets, committedOffsets });
+    const totalLag = lagRows.reduce((sum, row) => sum + row.lag, 0);
+    const pendingPartitions = lagRows.filter(row => row.pendingStart).length;
+
+    if (options.json) {
+      console.log(JSON.stringify({
+        topic: targetTopic,
+        group: options.group,
+        partitions: lagRows,
+        totalLag,
+        pendingPartitions
+      }, null, 2));
+      process.exit(0);
+    }
+
+    console.log(`📊 消费组积压看板 [${targetTopic}] / [${options.group}]:`);
+    console.log('------------------------------------------------------------------------');
+    console.log('| 分区 ID   | 最新位点 (High)     | 已提交位点 (Committed)| 积压量 (Lag)      | 状态       |');
+    console.log('------------------------------------------------------------------------');
+    for (const row of lagRows) {
+      const status = row.pendingStart ? '未启动/未提交' : row.lag > 0 ? '积压中' : '正常';
+      console.log(`| P${String(row.partition).padEnd(8)}| ${String(row.high).padEnd(19)}| ${String(row.committed ?? '-').padEnd(21)}| ${row.lag.toLocaleString().padEnd(17)}| ${status.padEnd(10)}|`);
+    }
+    console.log('------------------------------------------------------------------------');
+    console.log(`📈 消费组总积压: ${totalLag.toLocaleString()} 条 | 未提交分区: ${pendingPartitions} 个`);
+    console.log('ℹ️ 未提交分区按 Low -> High 保留消息量估算；已提交分区 Lag = High - Committed。');
+    process.exit(0);
+  }
+
+  // 6. 处理 --offsets-only 概览模式
   if (options.offsetsOnly) {
     console.log(`📊 分区水位看板 [${targetTopic}]:`);
     console.log(`------------------------------------------------------------------------`);
