@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、以及页面数据探索中枢。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、以及页面数据探索中枢、Dinsight 自然语言大数据探查。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查：复用 Chrome 插件复制的 prd-assistant-token-prod，直连 Agent 流式查数。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -12,6 +12,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 4. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
+7. **🧠 Dinsight 自然语言大数据探查**：用户复制 `prd-assistant-token-prod` 后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_query.js` 与 `scripts/apollo_modify.js`）是 AI 专用的后台探查与配置工具**。
@@ -58,9 +59,12 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **"更新测试环境 iot 库的设备状态"** | `node scripts/test_mysql_query.js iot "UPDATE t_device SET status = 0 WHERE sn = 'abc123'"` | 有 WHERE 条件直接执行，返回 changedRows |
 | **"删除测试环境 saas 的过期临时数据"** | `node scripts/test_mysql_query.js saas "DELETE FROM t_temp WHERE created_at < '2026-01-01'"` | 有 WHERE 条件直接执行 |
 | **“指定端口 6763 和库名查线上 SQL”** | `node scripts/cloud_mysql_query.js 6763 utopia_scs_recorder "SELECT count(*) FROM image_understanding_detail"` | 线上自定义端口与库名统计输出 |
+| **“用 Dinsight 查近 7 天北京成交量”** | `node scripts/dinsight_query.js "近7天北京成交量"` | 自然语言查数结论，含工具调用与 SSE 摘要 |
 | **“查下 beijia-reach-event 最新的 3 条消息 (线上)”** | `node scripts/kafka_query.js -t beijia-reach-event -n 3` | 格式化 JSON 消息体、Partition、Offset 与时间展示 (Zero-Commit) |
 | **“查下【测试环境】工单流转事件消息”** | `node scripts/kafka_query.js -t 工单 -e test -n 3` | 自动匹配测试 Topic 与 Broker 进行无损拉取 |
-| **“看下触达消息的各分区水位/有没有积压”** | `node scripts/kafka_query.js -t 触达 --offsets-only` | 分区 Low/High 水位与消息总数看板 |
+| **“看下触达消息的各分区水位/保留消息量”** | `node scripts/kafka_query.js -t 触达 --offsets-only` | 分区 Low/High 水位与保留消息总数看板 |
+| **“查下触达消费组 xxx 是否积压”** | `node scripts/kafka_query.js -t 触达 -g xxx --lag-only` | 分区 High/Committed/Lag 与消费组总积压看板 |
+| **“查下触达消费组 xxx 的生产/消费速率和多久能追平”** | `node scripts/kafka_query.js -t 触达 -g xxx --rate` | 生产速率、消费速率、Lag 变化、追平 ETA 与分区差分 |
 | **“查下包含工单号 T010020260907 的 Kafka 消息”** | `node scripts/kafka_query.js -t 工单 -q "T010020260907"` | 按单号或关键词在消息体内精准过滤 |
 | **“往测试环境发一条工单流转测试消息”** | `node scripts/kafka_send.js -t 工单 --use-sample -s orderCode=T-TEST-001 -s status=已接单` | 自动利用 Sample 模板替换字段并投递至测试集群 |
 | **“往测试环境某个 topic 发送特定 JSON 消息”** | `node scripts/kafka_send.js -t <topic> -d '<json>'` | 写入测试 Broker 并回显 Partition 与 Offset |
@@ -72,7 +76,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 
 ```mermaid
 flowchart TD
-    A["用户提出自然语言诉求 (查日志 / 查配置 / 改测试配置 / 提线上变更 / 追链路 / 查数据库)"] --> B{"意图类型判定"}
+    A["用户提出自然语言诉求 (查日志 / 查配置 / 改测试配置 / 提线上变更 / 追链路 / 查数据库 / 问 Dinsight)"] --> B{"意图类型判定"}
     
     B -->|"查日志 / 500 报错"| C1["后台执行 scripts/fast_query.js (-a, --level ERROR)"]
     B -->|"追溯 TraceId"| C2["后台执行 scripts/fast_query.js (--traceId)"]
@@ -81,6 +85,7 @@ flowchart TD
     B -->|"提【线上生产】Apollo 变更"| C8["后台执行 scripts/apollo_query.js (只读摸底)"]
     B -->|"查线上生产数据库"| C4["后台执行 scripts/cloud_mysql_query.js (appId, sql)"]
     B -->|"查线下/测试数据库"| C5["后台执行 scripts/test_mysql_query.js (appId, [ds], sql)"]
+    B -->|"问 Dinsight 查大数据"| C9["后台执行 scripts/dinsight_query.js (自然语言问题)"]
     B -->|"后台页面点击探查"| C6["通过 Chrome 扩展探针访问后台页面检索"]
 
     C1 --> D1["提取 URI, 状态码, 耗时, 错误堆栈"]
@@ -91,9 +96,10 @@ flowchart TD
     C8 --> D8["生成《线上变更建议单》(Diff + 风险评估) ＋ 生产 Portal 直达链接"]
     D8 --> E8["引导负责人在官方 Portal 亲自走合规审批与发布 (零越权、零资损)"]
     C4 & C5 --> D4["格式化 Markdown 数据表格，标注耗时与行数"]
+    C9 --> D9["提取 Dinsight 回答、SQL/指标工具与错误摘要"]
     C6 --> D5["解析页面 DOM / Network 返回数据"]
 
-    D1 & D2 & D3 & D4 & D5 & E7 & E8 --> E["向用户交付高可读性诊断报告与结论"]
+    D1 & D2 & D3 & D4 & D5 & D9 & E7 & E8 --> E["向用户交付高可读性诊断报告与结论"]
     E -.-> F["💡 若需免发版订正脏数据，主动引导唤起 leo-live-runner"]
 ```
 
@@ -268,6 +274,36 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 > 2. **智能目录引导**：若缺少密码，AI 主动引导用户切换至该项目的本地代码根目录（例如 `cd /Users/pa/project/JZ/utopia-scs-saas`），脚本将自动就地从 `application-test.yml` / `.env.test` 解析密码并直连；
 > 3. **验通即静默沉淀**：一旦握手测试成功，系统无感沉淀至 `~/.shrimp/skills/live-inspector/test_databases.json`，后续永久免输。
 
+
+## 🧠 3.5 Dinsight 自然语言大数据探查 (`scripts/dinsight_query.js`)
+AI 后台执行 `node scripts/dinsight_query.js "<自然语言问题>" [options]`：
+
+| 参数/选项 | 简写 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `"<自然语言问题>"` | - | 必填 | 直接向 Dinsight Agent 提问，例如 `近7天北京成交量` |
+| `--set-token` | - | - | 保存用户复制的主 Token **或完整 Cookie 标头**（自动筛选 5 个可用 Key） |
+| `--set-csrf` | - | - | 仅当 CSRF 失败时，追加保存插件里的 **`csrf_token`** |
+| `--token` | - | - | 单次临时覆盖主 Token |
+| `--whoami` | - | `false` | 只验证登录态，不发起提问 |
+| `--json` | - | `false` | 输出 SSE 摘要与原始流 |
+
+> 🔑 **凭证习惯（优先复制 Cookie 标头）**：
+> 1. 打开 `https://dinsight.ke.com/` 并确认已登录；
+> 2. 点击 **Leo cookie.txt Locally**，顶部域名改成 **`ke.com`**；
+> 3. **首选**：点【复制 Cookie 标头】，把整串 `k1=v1; k2=v2` 发给 AI。AI 必须立刻后台执行 `--set-token`，**禁止把完整 Cookie 回显给用户**；
+> 4. 脚本只会保留这 5 个 Key：`prd-assistant-token-prod`、`access_token`、`login_ucid`、`security_ticket`、`csrf_token`。其余一律丢弃，避免 `400 Request Header Or Cookie Too Large`；
+> 5. 保存成功后，AI 只回复：已登录账号 / 实际保留了哪些 Key / 可以开始提问。不要复述 Cookie 值；
+> 6. **次选**：只复制 `prd-assistant-token-prod`。若 `--whoami` 返回 401，再请用户改复制 Cookie 标头。主 Token 是 HttpOnly，不要引导用 F12 的 `document.cookie`。
+
+> ⚠️ **查数执行注意**：
+> 1. Dinsight 是 SSE 长连接，CLI 超时必须 ≥ 180s。禁止用默认 10s HTTP 超时，否则流未结束就会被掐断；
+> 2. 必须保存并解析 **完整 SSE**。最终表格/SQL 结果在流末尾，截取前 2 万字符会只看到“正在查表”；
+> 3. 回答要从 `AIMessageChunk` 增量拼接，不要把 human 原问题或工具列表当成结论；
+> 4. ODS 表（如 `ods.ods_plat_iot_plat_open_door_record_ha`）可能未接入平台。若 schema 为空，应改查有权限的 DW 表（如 `dw.dw_plat_iot_plat_open_door_record_da`），并明确告诉用户口径差异：ODS 小时分区 vs DW 日分区 T+1；
+> 5. 门锁 `open_time` 可能出现 `2106-...` 脏时间。最新业务记录应同时看 `ctime`，或排除 `open_time >= 2100-01-01`；
+> 6. 并发查询不要写同一个结果文件。
+
+
 ## 📡 4. Kafka 消息无损只读探查与安全模拟投递 (`scripts/kafka_query.js` & `scripts/kafka_send.js`)
 
 ### 4.1 核心设计理念
@@ -290,7 +326,9 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 | :--- | :--- | :--- |
 | **查最新消息 (线上)** | `node scripts/kafka_query.js -t <topic> -n 3` | 默认查线上最新 3 条，格式化回显 JSON 消息 |
 | **查最新消息 (测试)** | `node scripts/kafka_query.js -t <topic> -e test -n 3` | 自动路由至测试环境对应集群与测试 Topic |
-| **查分区水位/积压** | `node scripts/kafka_query.js -t <topic> --offsets-only` | 输出各分区的 Low / High 水位与消息总数看板 |
+| **查分区水位/保留消息量** | `node scripts/kafka_query.js -t <topic> --offsets-only` | 输出各分区的 Low / High 水位与消息总数看板 |
+| **查消费组真实积压** | `node scripts/kafka_query.js -t <topic> -g <groupId> --lag-only` | 输出 High / Committed / Lag、总积压与未提交分区数 |
+| **查生产/消费速率** | `node scripts/kafka_query.js -t <topic> -g <groupId> --rate --duration 20` | 两次只读快照差分输出速率、Lag 变化与预计追平时间 |
 | **按单号/关键词筛选** | `node scripts/kafka_query.js -t <topic> -q "<orderId>"` | 在拉取的消息中过滤指定业务关键词 |
 | **指定分区拉取** | `node scripts/kafka_query.js -t <topic> -p 0 -n 2` | 仅从指定分区拉取消息 |
 | **基于模板发送测试消息** | `node scripts/kafka_send.js -t <topic> --use-sample -s status=已完成` | 自动套用 Sample 模板并覆盖指定字段 |
@@ -316,6 +354,7 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 * **Apollo 测试环境配置修改**：目标页面 `http://test-apollo.portal.life.ke.com` ➔ 核心 Key: **`jt_apollo_login_token`**
 * **服务云 MySQL 查库**：目标页面 `https://cloud.intra.ke.com/database/mysql/self-check` ➔ 核心 Key: **`cloud_console_token_egg`**（`2.0...` 开头长串）
 * **FAST 日志全量自愈**：目标页面 `https://fast.ke.com` ➔ 核心 Key: **`_secondx`**（32位十六进制字符串）
+* **Dinsight 自然语言查数**：目标页面 `https://dinsight.ke.com/` ➔ 插件域名填 **`ke.com`** ➔ 核心 Key: **`prd-assistant-token-prod`**（必要时再复制 **`csrf_token`**）
 
 ---
 
@@ -329,9 +368,10 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
    * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
      `~/.agents/skills/leo-live-inspector/resources/chrome_extension`（或工程下的 `resources/chrome_extension`）。
 2. **获取凭证**：
-   * 打开目标页面（服务云或 FAST）；
+   * 打开目标页面（服务云、FAST 或 Dinsight）；
    * 点击浏览器右上角拼图中的 **Leo cookie.txt Locally** 图标；
-   * 在列表中找到对应 Key（**`cloud_console_token_egg`** 或 **`_secondx`**），点击右侧 **【复制】** 发给 AI；
+   * 在列表中找到对应 Key（**`cloud_console_token_egg`**、**`_secondx`** 或 Dinsight 的 **`prd-assistant-token-prod`**），点击右侧 **【复制】** 发给 AI；
+   * 问 Dinsight 时，插件顶部域名必须改成 **`ke.com`**，并优先点 **【复制 Cookie 标头】**；AI 只保留 `prd-assistant-token-prod` / `access_token` / `login_ucid` / `security_ticket` / `csrf_token`；
    * *（或者直接点击【📥 下载 cookies.txt】，脚本会自动从 Downloads 目录读取，免手动粘贴）*。
 
 #### 🪟 Windows 用户引导指引：
@@ -342,8 +382,9 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
    * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
      `%USERPROFILE%\.agents\skills\leo-live-inspector\resources\chrome_extension`（或工程下的 `resources\chrome_extension`）。
 2. **获取凭证**：
-   * 打开服务云或 FAST 页面，点击插件图标；
-   * 对应 Key 点击 **【复制】** 发给 AI（或点击【📥 下载 cookies.txt】）。
+   * 打开服务云、FAST 或 Dinsight 页面，点击插件图标；
+   * 对应 Key 点击 **【复制】** 发给 AI（查库复制 `cloud_console_token_egg`，日志复制 `_secondx`，Dinsight 复制 `prd-assistant-token-prod`）；
+   * 问 Dinsight 时，插件顶部域名必须改成 **`ke.com`**。
 
 ---
 
@@ -360,4 +401,5 @@ AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql
 - **Apollo 配置探查协议与实战手册**：[references/apollo-config-guide.md](references/apollo-config-guide.md)
 - **FAST 日志协议与检索自愈机制**：[references/fast-log-guide.md](references/fast-log-guide.md)
 - **后台页面点击与数据探查指南**：[references/page-inspect-guide.md](references/page-inspect-guide.md)
+- **Dinsight 自然语言查数协议**：[references/dinsight-query-guide.md](references/dinsight-query-guide.md)
 - **Trace 全链路时序排障实战**：[examples/100_trace_and_log_query.md](examples/100_trace_and_log_query.md)

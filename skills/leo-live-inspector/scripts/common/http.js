@@ -41,9 +41,11 @@ export function requestHttp(options, postBody = null) {
       }
     }
 
+    const { timeout: timeoutOpt, ...requestOptions } = reqOptions;
+    const timeoutMs = Number(timeoutOpt || 10000);
     const req = client.request({
-      timeout: 10000,
-      ...reqOptions
+      ...requestOptions,
+      timeout: timeoutMs
     }, (res) => {
       let raw = '';
       res.setEncoding('utf8');
@@ -63,7 +65,7 @@ export function requestHttp(options, postBody = null) {
 
     req.on('timeout', () => {
       req.destroy();
-      resolve({ statusCode: 504, headers: {}, raw: '', json: null, error: 'Request Timeout (10s)' });
+      resolve({ statusCode: 504, headers: {}, raw: '', json: null, error: `Request Timeout (${timeoutMs}ms)` });
     });
 
     req.on('error', (err) => {
