@@ -50,9 +50,11 @@ const SERVICE_DB_MAPPING = loadPresetServiceDbMapping();
 function getJson(urlStr, token) {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
-    https.get({
+    const isHttps = url.protocol === 'https:';
+    const client = isHttps ? https : http;
+    client.get({
       hostname: url.hostname,
-      port: url.port || 443,
+      port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       headers: {
         'Cookie': `cloud_console_token_egg=${token};`,
@@ -217,10 +219,12 @@ function postJson(urlStr, payload, token) {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
     const bodyStr = JSON.stringify(payload);
+    const isHttps = url.protocol === 'https:';
+    const client = isHttps ? https : http;
 
     const options = {
       hostname: url.hostname,
-      port: url.port || 443,
+      port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       method: 'POST',
       headers: {
@@ -232,7 +236,7 @@ function postJson(urlStr, payload, token) {
       timeout: 10000
     };
 
-    const req = https.request(options, (res) => {
+    const req = client.request(options, (res) => {
       let rawData = '';
       res.setEncoding('utf8');
       res.on('data', chunk => rawData += chunk);
@@ -418,7 +422,7 @@ async function main() {
   }
 
   // 1. 发起查询
-  const queryUrl = 'https://cloud.intra.ke.com/cloud-proxy-api/xmen/mysql/dql/query';
+  const queryUrl = process.env.LEO_CLOUD_MYSQL_QUERY_URL || 'https://cloud.intra.ke.com/cloud-proxy-api/xmen/mysql/dql/query';
   const queryRes = await postJson(queryUrl, {
     port: port.toString(),
     database: database,
@@ -427,37 +431,144 @@ async function main() {
   }, token);
 
   if (queryRes.isRedirect) {
-    console.error(`❌ Token 已失效（服务云已重定向至登录页）！`);
-    console.error(`💡 原因：您可能在浏览器中重新扫码登录过，服务云踢出了旧 Session。`);
-    printTokenGuide();
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: 'Token 已失效（服务云已重定向至登录页）',
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ Token 已失效（服务云已重定向至登录页）！`);
+      console.error(`💡 原因：您可能在浏览器中重新扫码登录过，服务云踢出了旧 Session。`);
+      printTokenGuide();
+    }
     process.exit(1);
   }
 
   if (!queryRes.success || !queryRes.data) {
-    console.error(`❌ 查询请求失败: ${queryRes.error || `HTTP ${queryRes.statusCode}`}`);
-    if (queryRes.raw) console.error(`响应内容: ${queryRes.raw.slice(0, 300)}`);
+    const errMsg = queryRes.error || `HTTP ${queryRes.statusCode}`;
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: `查询请求失败: ${errMsg}`,
+        raw: queryRes.raw ? queryRes.raw.slice(0, 300) : undefined,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 查询请求失败: ${errMsg}`);
+      if (queryRes.raw) console.error(`响应内容: ${queryRes.raw.slice(0, 300)}`);
+    }
     process.exit(1);
   }
 
   const resJson = queryRes.data;
   if (resJson.code !== 200000) {
-    console.error(`❌ 服务云返回错误 [${resJson.code}]: ${resJson.message}`);
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        code: resJson.code,
+        error: resJson.message,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 服务云返回错误 [${resJson.code}]: ${resJson.message}`);
+    }
     process.exit(1);
   }
 
-  const queryId = resJson.data.query_id;
-  const filePath = resJson.data.file_path;
+  if (!resJson.data) {
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: '服务云返回数据为空',
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 服务云返回数据为空！`);
+    }
+    process.exit(1);
+  }
+
+  // 核心修复点 1：检查 SQL 执行本身返回的错误（当表不存在、语法错误、非只读等，code 为 200000 但 data.error 包含具体报错）
+  if (resJson.data.error) {
+    const sqlError = resJson.data.error;
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: sqlError,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ SQL 执行失败: ${sqlError}`);
+      if (sqlError.includes("doesn't exist")) {
+        console.error(`💡 提示: 目标表可能不存在。可先执行 "SHOW TABLES" 查看当前库中的所有表。`);
+      } else if (sqlError.includes("Unknown column")) {
+        console.error(`💡 提示: 目标列可能不存在。可先执行 "DESCRIBE <表名>" 查看表字段结构。`);
+      } else if (sqlError.includes("仅允许执行")) {
+        console.error(`💡 提示: 服务云线上数据库仅支持 SELECT/SHOW/EXPLAIN 等只读查询；若需执行写入/更新，请使用测试环境脚本 test_mysql_query.js。`);
+      }
+    }
+    process.exit(1);
+  }
+
+  const queryId = resJson.data.query_id || resJson.data.queryId || resJson.data.QueryId;
+  const filePath = resJson.data.file_path || resJson.data.filePath || resJson.data.FilePath;
   const queryResultMeta = resJson.data.query_result || '';
 
+  // 核心修复点 2：防御性校验 queryId 是否存在，避免发起无效的 get_result 请求触发 validator 报错
+  if (!queryId) {
+    const errorMsg = resJson.data.error || resJson.message || '服务端未返回有效 query_id';
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: errorMsg,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 服务端未生成有效 query_id: ${errorMsg}`);
+    }
+    process.exit(1);
+  }
+
   // 2. 拉取结果 Excel Base64
-  const getResultUrl = 'https://cloud.intra.ke.com/cloud-proxy-api/xmen/mysql/dql/get_result';
+  const getResultUrl = process.env.LEO_CLOUD_MYSQL_GET_RESULT_URL || 'https://cloud.intra.ke.com/cloud-proxy-api/xmen/mysql/dql/get_result';
   const resultRes = await postJson(getResultUrl, {
     query_id: queryId,
     file_path: filePath
   }, token);
 
   if (!resultRes.success || !resultRes.data || resultRes.data.code !== 200000) {
-    console.error(`❌ 获取查询结果失败: ${resultRes.error || (resultRes.data && resultRes.data.message)}`);
+    const errorDetail = resultRes.error || (resultRes.data && resultRes.data.message) || `HTTP ${resultRes.statusCode}`;
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: `获取查询结果失败: ${errorDetail}`,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 获取查询结果失败: ${errorDetail}`);
+    }
     process.exit(1);
   }
 
@@ -465,7 +576,18 @@ async function main() {
   const parsedRows = parseXlsxBase64WithPython(b64Data);
 
   if (parsedRows.error) {
-    console.error(`❌ 解析 Excel 数据流失败: ${parsedRows.error}`);
+    if (outputJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: `解析 Excel 数据流失败: ${parsedRows.error}`,
+        service: firstArg,
+        port,
+        database,
+        sql
+      }, null, 2));
+    } else {
+      console.error(`❌ 解析 Excel 数据流失败: ${parsedRows.error}`);
+    }
     process.exit(1);
   }
 
@@ -473,6 +595,7 @@ async function main() {
 
   if (outputJson) {
     console.log(JSON.stringify({
+      success: true,
       service: firstArg,
       port,
       database,

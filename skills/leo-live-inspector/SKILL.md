@@ -260,6 +260,11 @@ AI 后台执行 `node scripts/cloud_mysql_query.js <appId|port> [database|sql] [
 | `--token` | - | - | 临时覆盖 Token |
 | `--json` | - | `false` | 输出纯 JSON 数据结果 |
 
+> 💡 **只读与表结构探查守则**：
+> 1. **只读保护**：服务云线上数据库仅允许只读查询 (`SELECT`, `SHOW`, `EXPLAIN`, `DESCRIBE`)，严禁执行任何写入/删除；
+> 2. **表结构探查**：未知线上表名或字段名时，切勿盲猜！可先执行 `node scripts/cloud_mysql_query.js <appId> "SHOW TABLES"` 列举库内所有表，或执行 `DESCRIBE <tableName>` 探查字段名与类型；
+> 3. **资产目录**：可执行 `node scripts/cloud_mysql_query.js --list-dbs` 查看当前账号已授权的所有端口与数据库列表。
+
 ### 3.2 线下/测试环境：MySQL 本地直连查询与写入 (零外部依赖、多数据源支持)
 AI 后台执行 `node scripts/test_mysql_query.js <service|host> [datasource|sql] [sql] [options]`：
 
