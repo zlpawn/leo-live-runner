@@ -33,3 +33,25 @@ test('saveFeciJobMeta and getFeciJobMeta should persist and retrieve job metadat
   assert.ok(strippedMeta, 'Stripped meta should match');
   assert.equal(strippedMeta.jobId, 9999);
 });
+
+test('feci_deploy CLI should block production deployments with safety advice', () => {
+  try {
+    execSync(`node ${FECI_SCRIPT} smart-customer-service-fe --env prod`, {
+      encoding: 'utf8',
+      stdio: 'pipe'
+    });
+    assert.fail('Should have exited with non-zero status');
+  } catch (err) {
+    assert.ok(err.stdout.includes('安全红线拦截'), 'Should output safety intercept warning');
+    assert.ok(err.stdout.includes('delivery-list'), 'Should output delivery portal link');
+  }
+});
+
+test('feci_deploy CLI should run deploy-only dry-run correctly', () => {
+  const output = execSync(`node ${FECI_SCRIPT} smart-customer-service-fe --deploy-only --dry-run`, {
+    encoding: 'utf8'
+  });
+  assert.ok(output.includes('Pre-flight 预检确认 (纯部署模式)'), 'Should output pre-flight check');
+  assert.ok(output.includes('--deploy-only'), 'Should indicate deploy-only mode');
+});
+

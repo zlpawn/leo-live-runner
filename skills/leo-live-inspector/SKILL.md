@@ -419,23 +419,28 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 
 ---
 
-### 5.4 🌐 前端微服务通用构建发布引擎 (`scripts/feci_deploy.js`) - FeCI / 青蝉
+### 5.4 🌐 前端微服务通用构建与服务云交付引擎 (`scripts/feci_deploy.js`) - FeCI / 青蝉 + 服务云交付中心
 
-全面支持贝壳全量前端微服务（IOT、JZ、ZK、HT 等所有技术栈）的自动化 CI/CD 构建与测试环境发布：
+全面支持贝壳全量前端微服务（IOT、JZ、ZK、HT 等所有技术栈）的自动化 FeCI 构建、服务云工作负载容器更新与 CDN 静态资源同步：
 
 | 参数/选项 | 简写 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `[appName\|jobId]` | - | 自动识别 | 目标前端项目名 (如 `smart-customer-service-fe`, `iot-platform-fe`) 或 FeCI 任务 ID (如 `1282`)，未提供时自动从本地 Git 仓库识别 |
 | `--branch` | `-b` | 自动提取 | 构建的代码分支，默认读取本地当前 Git 分支 (`master`, `feat/xxx`) |
+| `--env` | `-e` | `test` | 目标发布环境类型（默认: `test`，严格拦截生产环境 `prod` / `online`） |
+| `--deploy-only` | - | `false` | **纯部署模式**：跳过 FeCI 代码构建，直接选取最近构建产物下发服务云测试工作负载与 CDN 发布 |
+| `--ci-only` | - | `false` | **纯构建模式**：仅执行 FeCI 流水线构建与产物归档，不触发服务云工作负载部署 |
 | `--search` | `-s` | `null` | 搜索 FeCI 平台上的所有任务与流水线 (如 `-s "customer-service"`) |
 | `--list` | `-l` | `false` | 查看该任务最近的历史构建记录与触发人、耗时 |
-| `--dry-run` | - | `false` | 安全预检模式，仅打印任务名称、代码仓库、构建环境与分支，不触发实际构建 |
+| `--dry-run` | - | `false` | 安全预检模式，仅打印任务名称、代码仓库、构建环境与分支，不触发实际构建与部署 |
 | `--set-cookie` | - | - | 保存更新 FeCI 平台 (`feci-next.ke.com`) 独立 Session Cookie 凭证 |
+| `--set-cloud-cookie` | - | - | 保存更新服务云平台 (`cloud.intra.ke.com`) 统一 Session Cookie 凭证 |
 
-#### 零硬编码与跨工程自适应自学习
+#### 零硬编码与跨工程全流程闭环
 1. **自动感知**：任意前端工程根目录下执行 `node scripts/feci_deploy.js`，自动识别当前工程与 Git 分支；
 2. **动态嗅探**：通过 FeCI 官方 API（`GET /api/job/list`）动态匹配代码仓库与项目名推导流水线 Job ID；
-3. **本地自学习**：探测验通后自动持久化到 `~/.shrimp/skills/live-inspector/feci_catalog.json`，实现越用越快、全公司前端工程通用。
+3. **构建联动交付**：构建成功后，自动直连服务云交付中心（`PUT /apis/cloud-application/app/:serviceId/virtual-service/delivery`），一键更新测试工作负载容器镜像并同步 CDN 静态资源；
+4. **本地自学习**：探测验通后自动持久化到 `~/.shrimp/skills/live-inspector/feci_catalog.json`，实现越用越快、全公司前端工程通用。
 
 ---
 
