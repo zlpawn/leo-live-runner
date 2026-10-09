@@ -49,7 +49,11 @@ export const HARDCODED_FALLBACK_ALIASES = {
   'adaptor': 'zulin-iot-device-adaptor',
   'device-adaptor': 'zulin-iot-device-adaptor',
   'cangjie': 'cangjie',
-  'memory': 'dial-insight-memory'
+  'memory': 'dial-insight-memory',
+  'smart-customer-service': 'smart-customer-service',
+  'smart-customer': 'smart-customer-service',
+  'scs-service': 'smart-customer-service',
+  'scs-test': 'smart-customer-service'
 };
 
 let cachedCatalog = null;
@@ -122,3 +126,109 @@ export function getServiceMeta(inputApp) {
 
   return catalog[canonicalId] || catalog[inputApp] || null;
 }
+
+const CI_DEPLOY_CACHE_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-inspector', 'service_catalog.json');
+
+/**
+ * 获取微服务的构建与部署元数据 (优先读取本地自学习缓存，其次读取预置元数据)
+ */
+export function getServiceCiDeployMeta(inputApp) {
+  if (!inputApp) return null;
+  const canonicalId = resolveAppId(inputApp);
+
+  // 1. 本地动态发现自学习缓存
+  if (fs.existsSync(CI_DEPLOY_CACHE_FILE)) {
+    try {
+      const cache = JSON.parse(fs.readFileSync(CI_DEPLOY_CACHE_FILE, 'utf8'));
+      if (cache[canonicalId]) return cache[canonicalId];
+      if (cache[inputApp]) return cache[inputApp];
+    } catch {}
+  }
+
+  // 2. 静态注册表
+  const meta = getServiceMeta(canonicalId);
+  if (meta && (meta.ci || meta.deploy)) {
+    return {
+      serviceId: canonicalId,
+      ci: meta.ci || null,
+      deploy: meta.deploy || null
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 持久化自学习发现的微服务构建/部署元数据
+ */
+export function saveServiceCiDeployMeta(serviceId, meta) {
+  const dir = path.dirname(CI_DEPLOY_CACHE_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let cache = {};
+  if (fs.existsSync(CI_DEPLOY_CACHE_FILE)) {
+    try { cache = JSON.parse(fs.readFileSync(CI_DEPLOY_CACHE_FILE, 'utf8')); } catch {}
+  }
+
+  cache[serviceId] = {
+    serviceId,
+    ...meta,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    fs.writeFileSync(CI_DEPLOY_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const FECI_CATALOG_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-inspector', 'feci_catalog.json');
+
+/**
+ * 获取前端微服务在 FeCI 平台的任务配置 (优先读取本地自学习缓存)
+ */
+export function getFeciJobMeta(appName) {
+  if (!appName) return null;
+  const lower = appName.toLowerCase().trim();
+
+  if (fs.existsSync(FECI_CATALOG_FILE)) {
+    try {
+      const cache = JSON.parse(fs.readFileSync(FECI_CATALOG_FILE, 'utf8'));
+      if (cache[appName]) return cache[appName];
+      if (cache[lower]) return cache[lower];
+      if (cache[`${lower}-fe`]) return cache[`${lower}-fe`];
+      const stripped = lower.replace(/-fe$/, '');
+      if (cache[stripped]) return cache[stripped];
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * 持久化自学习发现的前端 FeCI 任务元数据
+ */
+export function saveFeciJobMeta(appName, meta) {
+  const dir = path.dirname(FECI_CATALOG_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let cache = {};
+  if (fs.existsSync(FECI_CATALOG_FILE)) {
+    try { cache = JSON.parse(fs.readFileSync(FECI_CATALOG_FILE, 'utf8')); } catch {}
+  }
+
+  cache[appName] = {
+    appName,
+    ...meta,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    fs.writeFileSync(FECI_CATALOG_FILE, JSON.stringify(cache, null, 2), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+

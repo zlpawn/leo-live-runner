@@ -13,14 +13,16 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
 7. **🧠 Dinsight 自然语言大数据探查**：用户复制 `prd-assistant-token-prod` 后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
+8. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
-> - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_query.js` 与 `scripts/apollo_modify.js`）是 AI 专用的后台探查与配置工具**。
-> - 用户只负责用自然语言表达排查、查配置、改测试配置或提线上变更意图（如 *“帮我看下 500 报错”*、*“根据 traceId 画个时序图”*、*“查下 iot-platform 的 apollo 配置”*、*“把测试环境 liveRunner 白名单加上 12”*、*“线上把 saas 超时改大”*）。
+> - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js` 与 `scripts/feci_deploy.js` 等）是 AI 专用的后台探查、交付与运维工具**。
+> - 用户只负责用自然语言表达排查、查配置、改测试配置、部署测试环境或提线上变更意图（如 *“帮我看下 500 报错”*、*“根据 traceId 画个时序图”*、*“查下 iot-platform 的 apollo 配置”*、*“把当前 master 分支构建部署到测试环境”*、*“把前端代码构建部署到测试”*、*“线上把 saas 超时改大”*）。
 > - **AI 必须在后台自动解析意图并主动执行对应脚本**：
 >   - **查日志/查配置/查库**：AI 后台静默执行，提取关键日志、出入参、实时配置或调用链，交付结构化表格与结论。
+>   - **测试环境 CI 构建与部署（全自动闭环）**：AI 后台自动识别当前 Git 仓库/服务与分支，触发构建并轮询镜像/产物出炉，自动下发测试环境负载部署并交付汇总报告；遇未配置服务自动动态发现并自学习缓存。
 >   - **测试环境 Apollo 修改（两阶段风控原则）**：AI **必须先执行 Pre-flight（Dry-Run）**，向用户展示【变更前 vs 变更后】Diff 对比单，**等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
->   - **生产环境 Apollo 变更（参谋原则，绝对禁止直写）**：AI **绝对禁止直接调用写接口修改线上配置**！后台通过只读探查抓取线上现状，生成包含【变更前 vs 建议后】Diff 对比、所属 Namespace、推荐发布属性（SWITCH 业务开关）及影响分析的《线上配置变更建议单》，并附带官方生产 Portal 直达链接，引导负责人在受控审批流中人工审核与发布。
+>   - **生产环境变更与部署（参谋原则，绝对禁止直写）**：AI **绝对禁止直接调用写接口修改线上配置或触发生产部署**！后台生成包含参数对比、风险评估的《线上变更建议单》，并附带官方生产发布/配置 Portal 直达链接，引导负责人在受控审批流中人工审核与发布。
 > - **切勿在回复中输出“请您手动在终端运行 node scripts/...”等推卸给用户的言论。**
 
 ---
@@ -43,6 +45,14 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 
 | 用户自然语言诉求示例 | AI 后台自动执行的标准命令 | 预期交付产物 |
 | :--- | :--- | :--- |
+| **“把当前分支构建部署到测试环境”** | `node scripts/ci_deploy.js` (后端) / `node scripts/feci_deploy.js` (前端) | 自动识别当前 Git 仓库与分支，触发流水线构建并自动部署测试环境 |
+| **“构建部署 smart-customer-service 的 master 分支”** | `node scripts/ci_deploy.js smart-customer-service -b master` | 触发指定微服务与分支构建，轮询镜像后部署测试环境 |
+| **“构建部署前端代码 / 发布前端测试环境”** | `node scripts/feci_deploy.js` | 自动识别前端工程与分支，触发 FeCI (青蝉) 构建与测试环境发布 |
+| **“只构建 smart-customer-service 不部署”** | `node scripts/ci_deploy.js smart-customer-service --build-only` | 触发构建流水线，轮询至产物镜像生成并回显镜像地址 |
+| **“把 smart-customer-service 最新镜像部署到测试”** | `node scripts/ci_deploy.js smart-customer-service --deploy-only` | 自动拉取最近构建完成的镜像，覆盖更新测试工作负载 |
+| **“查看 smart-customer-service 最近构建的镜像”** | `node scripts/ci_deploy.js smart-customer-service --list-images` | 提取最近 5 次构建产物的镜像地址与生成时间 |
+| **“新人首次部署未知微服务 (如 my-new-svc)”** | `node scripts/ci_deploy.js my-new-svc` | **自动嗅探** CI 流水线与测试工作负载，校验后自动自学习沉淀本地缓存 |
+| **“把 smart-customer-service 部署到线上/生产环境”** | **执行发布参谋模式 (坚决拦截生产直写)** | **严禁自动化生产部署！**<br>交付《生产环境部署参谋单》（含镜像版本、Commit、构建时间）并附带官方控制台直达链接，引导负责人在生产平台审批发布 |
 | *“查下 iot-platform 最新 10 条日志”* | `node scripts/fast_query.js -a iot-platform -t 15m -n 10` | 格式化概况与最新日志表格 |
 | *“看下刚才报的 500 错误/异常堆栈”* | `node scripts/fast_query.js -a <app> --level ERROR -t 30m -n 10` | 异常原因、报错位置与堆栈解析 |
 | *“根据 TraceId 361922-10... 抓下调用链路”* | `node scripts/fast_query.js -a <app> --traceId "361922-10..."` | **必须输出 Mermaid 时序交互图** 与关键调用耗时 |
@@ -354,20 +364,98 @@ AI 后台执行 `node scripts/dinsight_query.js "<自然语言问题>" [options]
 
 ---
 
-## 📊 5. AI 交付呈现规范
+## 🚀 5. CI 构建与测试环境工作负载自动化部署 (`scripts/ci_deploy.js` & `scripts/feci_deploy.js`)
+
+### 5.1 后端微服务 CI/CD 自动化构建与部署 (`scripts/ci_deploy.js`)
+AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
+
+| 参数/选项 | 简写 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `[serviceId]` | `-s, --service` | 自动识别 | 目标微服务 ID 或别名 (如 `smart-customer-service`, `saas`, `algo`)，未提供时自动根据当前本地 Git 仓库或目录识别 |
+| `--branch` | `-b` | 自动识别 | 构建的代码分支，未提供时自动执行 `git rev-parse --abbrev-ref HEAD` 提取当前分支 (如 `master`, `main`, `feat/xxx`) |
+| `--build-only` | - | `false` | 仅触发 Shipwright CI 构建并轮询镜像出炉，不执行工作负载部署 |
+| `--deploy-only` | - | `false` | 仅执行测试环境工作负载镜像部署 (未显式指定 `--image` 时自动使用该微服务最近构建成功的镜像) |
+| `--image` | `-i` | `null` | 显式指定部署的目标镜像完整地址 (如 `hub.ke.com/smart-customer-service/...:tag`) |
+| `--list-images` | `-l` | `false` | 查询并列出该微服务历史构建成功的镜像列表、版本 Tag 与生成时间 |
+| `--dry-run` | - | `false` | 安全预检模式，仅解析并打印识别到的 CI 流水线、工作负载配置与分支信息，不发起实际写操作 |
+| `--timeout` | - | `15m` | 构建轮询最大超时时间 (支持 `10m`, `900s` 等) |
+| `--set-cookie` | - | - | 保存更新服务云与 Shipwright 平台统一 Session Cookie 凭证至本地缓存 |
+| `--json` | - | `false` | 输出纯 JSON 数据结果 |
+
+---
+
+### 5.2 新人与未收录服务零配置自适应 (Auto-Discovery & Self-Learning)
+为确保新同学或新微服务无需手动改写配置文件即可无缝使用，底层引擎内置了两阶段动态发现与自愈闭环：
+
+1. **自动识别项目**：若未显式指定服务名，脚本自动读取本地 Git 仓库的 remote URL 或当前工程根目录名推导微服务 ID；
+2. **流水线与工作负载动态探测 (Auto-Discovery)**：
+   - 若服务未收录在内置清单中，脚本自动调用 Shipwright API（`POST /workflow-context/v1/workflows/query`）依据服务名与 `env: test` 匹配测试环境 CI 流水线 ID；
+   - 自动调用服务云 API（`GET /cloud-proxy-api/cloud-application/app/{serviceId}/virtual-services`）检索匹配环境为 `test` 的工作负载 ID；
+3. **静默自学习沉淀**：
+   - 探测验通后，自动将 `ciWorkflowId` 和 `testWorkloadId` 持久化写入 `~/.shrimp/skills/live-inspector/service_catalog.json`；
+   - 下次执行直接命中本地缓存，实现 **0 手动配置、0 维护成本、越用越聪明**。
+
+---
+
+### 5.3 🛡️ 生产发布安全铁律 (Strict Test-Only & Production Advisor SOP)
+
+> 🚨 **【生产环境铁律：严禁自动化脚本直写生产容器】**
+> - 生产环境镜像部署直接影响线上真实业务，严禁任何 AI Agent 或自动化脚本绕过官方发布平台直接更新生产虚拟服务容器！
+> - **自动化构建部署能力绝对仅对测试环境 (`test`) 开放**。
+
+#### 生产变更参谋模式 (Advisor SOP)
+当用户提出“把这个分支/镜像部署到线上/生产环境”时，AI 自动触发发布参谋模式：
+1. **阻断直写**：底层脚本拦截任何目标为 `prod` / `online` 的部署指令；
+2. **生成《生产环境部署参谋单》**：
+   - 🎯 **应用信息**：微服务名称 (`serviceId`)；
+   - 🏷️ **推荐发布镜像**：展示经过测试验证的最新产物镜像 Tag（例如 `hub.ke.com/{app}:{timestamp}-{branch}-{hash}`）；
+   - 📝 **代码变更摘要**：关联的 Git Commit、分支名称、构建人与构建时间；
+3. **交付官方控制台直达链接**：
+   ```text
+   🔗 服务云生产工作负载控制台直达链接:
+   https://cloud.intra.ke.com/console/project/cloud/application/{serviceId}/virtual-service-list
+   ```
+4. **引导负责人审批发布**：指引业务负责人在服务云控制台选择该镜像，发起标准的生产发布与审批流程。
+
+---
+
+### 5.4 🌐 前端微服务通用构建发布引擎 (`scripts/feci_deploy.js`) - FeCI / 青蝉
+
+全面支持贝壳全量前端微服务（IOT、JZ、ZK、HT 等所有技术栈）的自动化 CI/CD 构建与测试环境发布：
+
+| 参数/选项 | 简写 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `[appName\|jobId]` | - | 自动识别 | 目标前端项目名 (如 `smart-customer-service-fe`, `iot-platform-fe`) 或 FeCI 任务 ID (如 `1282`)，未提供时自动从本地 Git 仓库识别 |
+| `--branch` | `-b` | 自动提取 | 构建的代码分支，默认读取本地当前 Git 分支 (`master`, `feat/xxx`) |
+| `--search` | `-s` | `null` | 搜索 FeCI 平台上的所有任务与流水线 (如 `-s "customer-service"`) |
+| `--list` | `-l` | `false` | 查看该任务最近的历史构建记录与触发人、耗时 |
+| `--dry-run` | - | `false` | 安全预检模式，仅打印任务名称、代码仓库、构建环境与分支，不触发实际构建 |
+| `--set-cookie` | - | - | 保存更新 FeCI 平台 (`feci-next.ke.com`) 独立 Session Cookie 凭证 |
+
+#### 零硬编码与跨工程自适应自学习
+1. **自动感知**：任意前端工程根目录下执行 `node scripts/feci_deploy.js`，自动识别当前工程与 Git 分支；
+2. **动态嗅探**：通过 FeCI 官方 API（`GET /api/job/list`）动态匹配代码仓库与项目名推导流水线 Job ID；
+3. **本地自学习**：探测验通后自动持久化到 `~/.shrimp/skills/live-inspector/feci_catalog.json`，实现越用越快、全公司前端工程通用。
+
+---
+
+## 📊 6. AI 交付呈现规范
 
 1. **日志排查交付**：概况元信息 ➕ 结构化明细表格 ➕ 异常原因与堆栈分析；
 2. **TraceId 追溯交付**：**强制绘制清晰的 Mermaid 时序交互图**（展示 上游 -> 微服务 -> DB/Redis/下游）；
 3. **Apollo 配置交付**：标明配置中心来源、命名空间、配置 Key、格式化解析后的 JSON 结构，并解释业务含义；
-4. **协同引导**：当发现数据异常或开关需要动态干预时，主动提示可唤起 `leo-live-runner` 进行免发版处理。
+4. **CI 构建与测试部署交付**：汇报服务名称、构建分支、流水线 ID、轮询耗时、出炉镜像/产物地址，以及测试环境工作负载更新生效状态；
+5. **协同引导**：当发现数据异常或开关需要动态干预时，主动提示可唤起 `leo-live-runner` 进行免发版处理。
 
 ---
 
-## 🔌 6. 跨平台 Token/Cookie 凭证获取与 Chrome 插件引导规范
+## 🔌 7. 跨平台 Token/Cookie 凭证获取与 Chrome 插件引导规范
 
-当执行查库或日志自愈遇到 **凭证缺失** 或 **凭证过期（302 重定向）** 时，AI 必须根据用户操作系统（Mac / Windows）主动提供清晰、精准的引导，严禁仅抛出冷冰冰的报错或模糊的 F12 指引：
+当执行查库、日志自愈或 CI/CD 构建部署遇到 **凭证缺失** 或 **凭证过期（302 重定向 / 401 鉴权失败）** 时，AI 必须根据用户操作系统（Mac / Windows）主动提供清晰、精准的引导，严禁仅抛出冷冰冰的报错或模糊的 F12 指引：
 
 ### 🔑 核心凭证 Key 速查
+* **服务云构建部署 / Shipwright 流水线**：目标页面 `https://cloud.intra.ke.com` 与 `https://shipwright.ke.com` ➔ 核心凭证：**完整 Cookie 字符串**（包含 `EGG_SESS` / `session_id`，兼具 `cloud_console_token_egg`）
+* **FeCI 前端构建发布平台 (青蝉)**：目标页面 `https://feci-next.ke.com` ➔ 核心凭证：**完整 Cookie 字符串**（通过 `node scripts/feci_deploy.js --set-cookie` 写入）
 * **Apollo 测试环境配置修改**：目标页面 `http://test-apollo.portal.life.ke.com` ➔ 核心 Key: **`jt_apollo_login_token`**
 * **服务云 MySQL 查库**：目标页面 `https://cloud.intra.ke.com/database/mysql/self-check` ➔ 核心 Key: **`cloud_console_token_egg`**（`2.0...` 开头长串）
 * **FAST 日志全量自愈**：目标页面 `https://fast.ke.com` ➔ 核心 Key: **`_secondx`**（32位十六进制字符串）
