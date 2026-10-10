@@ -12,16 +12,37 @@
  */
 
 import https from 'node:https';
+import { createCredentialSession } from './common/browser_credentials.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { URL } from 'node:url';
-import { loadCloudCookie, saveCloudCookie } from './common/credentials.js';
+import { loadCloudCookie, saveCloudCookie, loadShipwrightCookie, saveShipwrightCookie } from './common/credentials.js';
 import { resolveAppId, getServiceCiDeployMeta, saveServiceCiDeployMeta } from './common/services.js';
+
+
+const credentialSessions = new Map();
+async function doRequest(urlStr, options = {}, ignoredCookie = '') {
+  const url = new URL(urlStr);
+  let session = credentialSessions.get(url.origin);
+  if (!session) {
+    const configs = {
+      'https://cloud.intra.ke.com': {load:loadCloudCookie, save:saveCloudCookie, explicit:Boolean(process.env.CLOUD_COOKIE)},
+      'https://shipwright.ke.com': {load:loadShipwrightCookie, save:saveShipwrightCookie, explicit:Boolean(process.env.SHIPWRIGHT_COOKIE)},
+
+    };
+    if (!configs[url.origin]) throw new Error('不支持的凭据目标站点');
+    session = createCredentialSession(configs[url.origin]);
+    credentialSessions.set(url.origin, session);
+  }
+  const method = options.method || (options.body ? 'POST' : 'GET');
+  const readOnly = method === 'GET' || (method === 'POST' && /^\/workflow-context\/v1\/(workflows|workflow-records|artifacts)\/query$/.test(url.pathname));
+  return session.run(url.href, cookie => rawDoRequest(url.href,options,cookie), {readOnly});
+}
 
 // ---------------- 基础 HTTP 请求封装 ----------------
 
-function doRequest(urlStr, options = {}, cookie = '') {
+function rawDoRequest(urlStr, options = {}, cookie = '') {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
     const postBody = options.body;
@@ -84,9 +105,10 @@ function doRequest(urlStr, options = {}, cookie = '') {
 function printCredentialGuide(reason = '未配置登录凭证') {
   console.log(`\n❌ 【云平台与 CI 凭证错误】: ${reason}`);
   console.log(`💡 构建与部署需要具备贝壳内网 SSO 登录态 (cloud.intra.ke.com / shipwright.ke.com)`);
-  console.log(`\n🔑 【请任选一种方式快速配置】:`);
+  console.log(`请在浏览器登录对应站点并确认插件已重新加载后重试；以下是手动兜底方式。`);
   console.log(`1. 命令行快速写入:`);
-  console.log(`   node scripts/ci_deploy.js --set-cookie "<完整的 Cookie 字符串>"`);
+  console.log(`   node scripts/ci_deploy.js --set-cookie "<服务云 Cookie>"`);
+  console.log(`   node scripts/ci_deploy.js --set-shipwright-cookie "<Shipwright Cookie>"`);
   console.log(`2. Chrome 扩展一键导出:`);
   console.log(`   打开云平台 (https://cloud.intra.ke.com)，点击 "Leo cookie.txt Locally" 插件`);
   console.log(`   点击【下载 cookies.txt】，脚本下次执行时将自动自愈并无感读取。`);
@@ -285,7 +307,7 @@ async function pollBuildUntilComplete(workflowId, recordId, cookie, timeoutMs = 
 
     if (status === 'SUCCESS') {
       console.log(`   🎉 构建成功完成! 总耗时: ${elapsedSec} 秒`);
-      
+
       // 提取产物镜像地址
       const artRes = await doRequest(`https://shipwright.ke.com/workflow-context/v1/artifacts/query?pageNumber=1&pageSize=5`, {
         method: 'POST',
@@ -410,12 +432,20 @@ async function main() {
     console.log(`  -l, --list-images      列出该微服务历史构建成功的镜像列表与时间`);
     console.log(`  --dry-run              安全预检模式，仅解析并打印配置信息，不触发实际写操作`);
     console.log(`  --timeout <duration>   构建轮询最大超时时间 (默认: 15m)`);
-    console.log(`  --set-cookie "<str>"   保存更新服务云与 Shipwright 平台统一 Session Cookie`);
+    console.log(`  --set-cookie "<str>"   保存服务云 Cookie；Shipwright 使用 --set-shipwright-cookie`);
     console.log(`  --json                 输出纯 JSON 数据结果`);
     console.log(`  -h, --help             显示帮助信息\n`);
     process.exit(0);
   }
 
+  const shipCookieIndex = args.indexOf('--set-shipwright-cookie');
+  if (shipCookieIndex !== -1) {
+    const value = args[shipCookieIndex + 1];
+    if (!value || value.startsWith('--')) throw new Error('请提供 Shipwright Cookie');
+    saveShipwrightCookie(value);
+    console.log('✅ Shipwright Cookie 已保存');
+    return;
+  }
   // 1. 设置 Cookie 命令
   const setCookieIdx = args.indexOf('--set-cookie');
   if (setCookieIdx !== -1) {
@@ -481,10 +511,7 @@ async function main() {
 
   // 4. 读取凭证
   const cookie = loadCloudCookie();
-  if (!cookie) {
-    printCredentialGuide('未找到有效凭证');
-    process.exit(1);
-  }
+
 
   // 5. 辅助查询模式
   if (isListImages) {

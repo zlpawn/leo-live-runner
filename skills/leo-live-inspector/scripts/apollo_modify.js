@@ -14,15 +14,24 @@
  */
 
 import fs from 'node:fs';
+import { createCredentialSession } from './common/browser_credentials.js';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolveAppId, APOLLO_SERVERS } from './common/services.js';
 import { SHRIMP_LIVE_DIR, loadApolloTestCookie, saveApolloTestCookie } from './common/credentials.js';
-import { requestHttp } from './common/http.js';
+import { requestHttp as rawRequestHttp } from './common/http.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let credentials;
+async function requestHttp(options, body) {
+  if (options.hostname !== DEFAULT_PORTAL_HOST) return rawRequestHttp(options, body);
+  const url = `http://${DEFAULT_PORTAL_HOST}${options.path}`;
+  return credentials.run(url, cookie => rawRequestHttp({...options,
+    headers:{...options.headers, Cookie:cookie}},body), {readOnly:!options.method || options.method==='GET'});
+}
 
 const COOKIE_FILE = path.join(SHRIMP_LIVE_DIR, 'test_apollo_cookie.json');
 const DEFAULT_PORTAL_HOST = 'test-apollo.portal.life.ke.com';
@@ -154,24 +163,8 @@ async function main() {
   const releaseAttrLabel = RELEASE_ATTR_LABEL[releaseAttr] || '业务开关 (SWITCH)';
 
   const cookie = customCookie || loadApolloTestCookie();
-  if (!cookie) {
-    console.error(`
-❌ 未找到 Apollo 测试环境登录凭证 (Cookie)！
-
-💡 获取指引（请在已登录的测试 Apollo 页面复制）：
-   目标页面: http://test-apollo.portal.life.ke.com
-
-   👉 方式 A（推荐，使用右上方 Leo Cookie 插件）：
-      点击插件图标，找到 [jt_apollo_login_token] 点击【复制】；
-      或点击【复制全部 Cookie】。
-   👉 方式 B（F12 开发者工具）：
-      按 F12 ➔ Application ➔ Cookies ➔ 选中 test-apollo.portal.life.ke.com ➔ 复制 [jt_apollo_login_token] 的值。
-
-   保存凭证命令:
-      node scripts/apollo_modify.js --set-cookie "<粘贴的Cookie>"
-`);
-    process.exit(1);
-  }
+  credentials = createCredentialSession({load:()=>cookie, save:saveApolloTestCookie,
+    explicit:Boolean(customCookie || process.env.APOLLO_TEST_COOKIE)});
 
   const commonHeaders = {
     'Cookie': cookie,

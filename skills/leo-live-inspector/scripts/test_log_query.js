@@ -12,6 +12,7 @@
  */
 
 import https from 'node:https';
+import { createCredentialSession } from './common/browser_credentials.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -28,7 +29,7 @@ const COOKIE_FILE = path.join(SHRIMP_LIVE_DIR, 'paoding_cookie.json');
 const LOKI_QUERY_URL = 'https://paoding.ke.com/api/ds/query?ds_type=loki';
 const LOKI_DATASOURCE_UID = 'd5141ff6-e1e8-4e8d-ba6f-6dcb1e356fdc';
 
-function postJson(urlStr, payload, cookieStr) {
+function rawPostJson(urlStr, payload, cookieStr) {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
     const bodyStr = JSON.stringify(payload);
@@ -51,11 +52,11 @@ function postJson(urlStr, payload, cookieStr) {
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
         if (res.statusCode === 302 || (res.headers.location && res.headers.location.includes('login.ke.com'))) {
-          return resolve({ success: false, isRedirect: true, statusCode: res.statusCode });
+          return resolve({ success: false, isRedirect: true, statusCode: res.statusCode, headers: res.headers });
         }
         try {
           const json = JSON.parse(raw);
-          resolve({ success: true, data: json, statusCode: res.statusCode });
+          resolve({ success: true, data: json, statusCode: res.statusCode, headers: res.headers });
         } catch (e) {
           resolve({ success: false, raw, statusCode: res.statusCode, error: e.message });
         }
@@ -211,15 +212,10 @@ async function main() {
     expr += ` |= "${queryStr}"`;
   }
 
-  const cookie = customCookie || loadPaodingCookie();
-  if (!cookie) {
-    console.error(`\n❌ 未找到 Paoding 登录 Cookie 凭证！`);
-    console.error(`💡 获取指引：`);
-    console.error(`   1. 打开已登录的 https://paoding.ke.com 页面；`);
-    console.error(`   2. 点击右上角 Leo Cookie 插件复制 Cookie，或按 F12 复制 security_ticket / login_ucid；`);
-    console.error(`   3. 运行: node scripts/test_log_query.js --set-cookie "<粘贴的Cookie>"\n`);
-    process.exit(1);
-  }
+  const cookie = customCookie || process.env.PAODING_COOKIE || '';
+  const credentials = createCredentialSession({load:()=>cookie, save:savePaodingCookie, anonymous:true, fallbackLoad:loadPaodingCookie,
+    explicit:Boolean(customCookie || process.env.PAODING_COOKIE)});
+
 
   const payload = {
     queries: [
@@ -237,7 +233,7 @@ async function main() {
   };
 
   const startTime = Date.now();
-  const res = await postJson(LOKI_QUERY_URL, payload, cookie);
+  const res = await credentials.run(LOKI_QUERY_URL, value => rawPostJson(LOKI_QUERY_URL, payload, value), {readOnly:true});
   const costMs = Date.now() - startTime;
 
   if (res.isRedirect) {

@@ -1,8 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 export const SHRIMP_LIVE_DIR = path.join(os.homedir(), '.shrimp', 'skills', 'live-inspector');
+
+
+export function writeCredentialJson(file, payload) {
+  const temp = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(temp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    fs.renameSync(temp, file);
+    return true;
+  } finally { try { fs.unlinkSync(temp); } catch {} }
+}
 
 export function ensureShrimpLiveDir() {
   if (!fs.existsSync(SHRIMP_LIVE_DIR)) {
@@ -16,7 +28,7 @@ export function ensureShrimpLiveDir() {
 export function loadCookie({
   envVar = null,
   jsonFileName = 'cookie.json',
-  domainFilter = null,
+  targetUrl = null,
   downloadCandidates = []
 } = {}) {
   // 1. 环境变量优先
@@ -46,17 +58,26 @@ export function loadCookie({
     if (fs.existsSync(c)) {
       try {
         const text = fs.readFileSync(c, 'utf8');
+        if (!targetUrl) continue;
+        const target = new URL(targetUrl);
         const lines = text.split('\n');
         const kvs = [];
         for (const line of lines) {
-          const parts = line.split('\t');
-          if (parts.length >= 7) {
-            const domain = parts[0];
-            const name = parts[5].trim();
-            const val = parts[6].trim();
-            if (!domainFilter || domain.includes(domainFilter) || domain.includes('.ke.com')) {
-              kvs.push(`${name}=${val}`);
-            }
+          if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) continue;
+          const parts = line.replace(/^#HttpOnly_/, '').trimEnd().split('\t');
+          if (parts.length !== 7) continue;
+          const [rawDomain, includeSubdomains, cookiePath, secure, expiry, name, val] = parts;
+          const domain = rawDomain.replace(/^\./, '').toLowerCase();
+          const domainMatches = target.hostname === domain ||
+            (includeSubdomains === 'TRUE' && target.hostname.endsWith(`.${domain}`));
+          const pathMatches = cookiePath.startsWith('/') && (target.pathname === cookiePath ||
+            target.pathname.startsWith(cookiePath.endsWith('/') ? cookiePath : `${cookiePath}/`));
+          const expires = Number(expiry);
+          if (domain && domainMatches && pathMatches &&
+              (secure !== 'TRUE' || target.protocol === 'https:') &&
+              Number.isFinite(expires) && (expires === 0 || expires * 1000 > Date.now()) &&
+              /^[!#$%&'*+.^_`|~\w-]+$/.test(name) && !/[\x00-\x20\x7f;]/.test(val)) {
+            kvs.push(`${name}=${val}`);
           }
         }
         if (kvs.length > 0) {
@@ -82,11 +103,11 @@ export function saveCookie({
   ensureShrimpLiveDir();
   const jsonPath = path.join(SHRIMP_LIVE_DIR, jsonFileName);
   try {
-    fs.writeFileSync(jsonPath, JSON.stringify({
+    writeCredentialJson(jsonPath, {
       cookie: cookieStr.trim(),
       updated_at: new Date().toISOString(),
       ...extraFields
-    }, null, 2), 'utf8');
+    });
     return true;
   } catch {
     return false;
@@ -100,7 +121,7 @@ export function loadApolloTestCookie() {
   return loadCookie({
     envVar: 'APOLLO_TEST_COOKIE',
     jsonFileName: 'test_apollo_cookie.json',
-    domainFilter: 'test-apollo',
+    targetUrl: 'http://test-apollo.portal.life.ke.com/',
     downloadCandidates: [
       'cookies-test-apollo.portal.life.ke.com.txt',
       'cookies-test-apollo.txt'
@@ -120,7 +141,7 @@ export function loadPaodingCookie() {
   return loadCookie({
     envVar: 'PAODING_COOKIE',
     jsonFileName: 'paoding_cookie.json',
-    domainFilter: 'paoding',
+    targetUrl: 'https://paoding.ke.com/api/ds/query',
     downloadCandidates: [
       'cookies-paoding.ke.com.txt',
       'cookies-paoding.txt'
@@ -157,11 +178,10 @@ export function loadCloudCookie() {
 
   const cookieStr = loadCookie({
     jsonFileName: 'cloud_token.json',
-    domainFilter: 'ke.com',
+    targetUrl: 'https://cloud.intra.ke.com/',
     downloadCandidates: [
       'cookies-cloud.intra.ke.com.txt',
       'cookies-cloud.ke.com.txt',
-      'cookies-shipwright.ke.com.txt',
       'cookies.txt'
     ]
   });
@@ -187,7 +207,7 @@ export function saveCloudCookie(cookieStr) {
       payload.cloud_console_token_egg = eggToken;
       payload.token = eggToken;
     }
-    fs.writeFileSync(tokenFile, JSON.stringify(payload, null, 2), 'utf8');
+    writeCredentialJson(tokenFile, payload);
     return true;
   } catch {
     return false;
@@ -213,7 +233,7 @@ export function loadCloudConsoleToken() {
 
   const cookieStr = loadCookie({
     jsonFileName: 'cloud_token.json',
-    domainFilter: 'cloud.intra.ke.com',
+    targetUrl: 'https://cloud.intra.ke.com/',
     downloadCandidates: ['cookies-cloud.intra.ke.com.txt', 'cookies.txt']
   });
   if (cookieStr) {
@@ -240,12 +260,12 @@ export function saveCloudConsoleToken(token) {
   }
 
   try {
-    fs.writeFileSync(tokenFile, JSON.stringify({
+    writeCredentialJson(tokenFile, {
       ...existing,
       cloud_console_token_egg: cleanToken,
       token: cleanToken,
       updated_at: new Date().toISOString()
-    }, null, 2), 'utf8');
+    });
     return true;
   } catch {
     return false;
@@ -259,7 +279,7 @@ export function loadFeciCookie() {
   return loadCookie({
     envVar: 'FECI_COOKIE',
     jsonFileName: 'feci_cookie.json',
-    domainFilter: 'feci',
+    targetUrl: 'https://feci-next.ke.com/',
     downloadCandidates: [
       'cookies-feci-next.ke.com.txt',
       'cookies-feci.ke.com.txt',
@@ -275,3 +295,11 @@ export function saveFeciCookie(cookieStr) {
   });
 }
 
+
+export function loadShipwrightCookie() {
+  return loadCookie({envVar:'SHIPWRIGHT_COOKIE', jsonFileName:'shipwright_cookie.json',
+    targetUrl:'https://shipwright.ke.com/', downloadCandidates:['cookies-shipwright.ke.com.txt']});
+}
+export function saveShipwrightCookie(cookieStr) {
+  return saveCookie({jsonFileName:'shipwright_cookie.json',cookieStr});
+}

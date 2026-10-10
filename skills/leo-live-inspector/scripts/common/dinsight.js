@@ -161,7 +161,7 @@ export function loadDinsightCredentials({
 
   const cookieStr = loadCookie({
     jsonFileName: DINSIGHT_COOKIE_FILE,
-    domainFilter: 'ke.com',
+    targetUrl: `${DINSIGHT_API_BASE}/api/v1/auth/me`,
     downloadCandidates: [
       'cookies-ke.com.txt',
       'cookies-dinsight.ke.com.txt',
@@ -339,7 +339,7 @@ export async function createDinsightThread(credentials, {
 
 export async function streamDinsightQuestion(credentials, question, options = {}) {
   const created = await createDinsightThread(credentials, options);
-  if ((created.statusCode || 0) >= 400) return created;
+  if ((created.statusCode || 0) >= 300) return created;
   const { threadId, payload } = buildDinsightRunPayload(question, {
     threadId: created.threadId,
     assistantId: options.assistantId,

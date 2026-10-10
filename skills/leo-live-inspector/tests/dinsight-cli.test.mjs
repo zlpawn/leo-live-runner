@@ -40,7 +40,7 @@ test('--set-token keeps only Dinsight cookies from a full header', () => {
 });
 
 test('missing credentials prints the copy-token guide', () => {
-  const result = runCli(['--whoami']);
+  const result = runCli(['--whoami'], {LEO_INSPECTOR_BROWSER_CREDENTIALS:'off'});
   assert.equal(result.status, 1);
   assert.match(result.stderr + result.stdout, /prd-assistant-token-prod/);
   assert.match(result.stderr + result.stdout, /ke.com/);

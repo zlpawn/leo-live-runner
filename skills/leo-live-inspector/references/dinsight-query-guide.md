@@ -18,9 +18,11 @@
 
 ## 2. 凭证获取
 
-Dinsight 登录态在父域 `.ke.com`。插件按当前页域名过滤时，必须把顶部域名改成 **`ke.com`**。
+默认自动获取：安装/升级本 skill 随附的 Chrome 插件至 1.3.0 并重新加载，在同一普通 Profile 登录 Dinsight 后执行命令。缓存缺失或明确登录失败时，临时 `credential_relay` 按实际 API URL 获取以下 5 个 Cookie，验证后保存。插件约每 60 秒探测，默认最多等待 180 秒；未登录时先登录再重试。无需手动复制或设置插件域名。
 
-### 2.1 首选：复制 Cookie 标头
+以下手动流程仅用于自动获取不可用时。可设置 `LEO_INSPECTOR_BROWSER_CREDENTIALS=off` 关闭自动获取。
+
+### 2.1 手动兜底：复制 Cookie 标头
 
 用户动作：
 
@@ -47,7 +49,7 @@ AI 收到后必须：
 
 整包 `.ke.com` Cookie 大约 100+ 条，原样带上会触发 `400 Request Header Or Cookie Too Large`。
 
-### 2.2 次选：只复制主 Token
+### 2.2 手动兜底：只复制主 Token
 
 复制 `prd-assistant-token-prod` 后执行 `--set-token`。若 `/api/v1/auth/me` 返回 401，再请用户改复制 Cookie 标头。不要引导 F12 的 `document.cookie`，主 Token 是 HttpOnly。
 

@@ -11,10 +11,13 @@
  */
 
 import fs from 'node:fs';
+import { createCredentialSession, isLoginFailure } from './common/browser_credentials.js';
+import { cookiesToHeader } from './credential_relay.js';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  DINSIGHT_COOKIE_KEYS,
   DINSIGHT_ASSISTANT_TOKEN_KEY,
   DINSIGHT_CSRF_TOKEN_KEY,
   DINSIGHT_DEFAULT_ASSISTANT_ID,
@@ -165,19 +168,33 @@ async function main() {
   const whoami = hasFlag(args, '--whoami');
   const question = args.filter(arg => !arg.startsWith('-')).join(' ').trim();
 
-  const credentials = mergeCredentials(loadDinsightCredentials(), {
+  let credentials = mergeCredentials(loadDinsightCredentials(), {
     token: tempToken,
     csrfToken: tempCsrf,
     cookie: tempToken ? parseDinsightCredentialInput(tempToken).cookie : ''
   });
 
-  if (!credentials.token && !credentials.cookie) {
-    console.error('❌ 未检测到 Dinsight 凭证 (prd-assistant-token-prod)！');
+  const session = createCredentialSession({
+    load:()=>credentials.token || credentials.cookie ? credentials : '',
+    explicit:Boolean(tempToken || tempCsrf || process.env.DINSIGHT_TOKEN || process.env.DINSIGHT_COOKIE),
+    names:DINSIGHT_COOKIE_KEYS,
+    fromCookies:cookies=>{
+      const parsed=parseDinsightCredentialInput(cookiesToHeader(cookies));
+      return parsed.token ? parsed : '';
+    },
+    save:saveDinsightCredentials,
+    isAuthFailure:response=>!response.summary?.eventCount && (isLoginFailure(response) ||
+      (response.statusCode===403 && /csrf/i.test(response.raw || '')))
+  });
+  let me;
+  try {
+    me = await session.run('https://api-dinsight.ke.com/api/v1/auth/me', fetchDinsightMe, {readOnly:true});
+    credentials = session.current();
+  } catch (err) {
+    console.error(`❌ Dinsight 自动获取失败: ${err.code || 'ERROR'}，请打开浏览器并登录 dinsight.ke.com（prd-assistant-token-prod）。`);
     printTokenGuide();
     process.exit(1);
   }
-
-  const me = await fetchDinsightMe(credentials);
   if (me.statusCode === 401 || me.statusCode === 302) {
     console.error('❌ Dinsight 登录态已失效，请重新复制 prd-assistant-token-prod');
     printTokenGuide();
@@ -202,13 +219,18 @@ async function main() {
     return;
   }
 
-  const result = await streamDinsightQuestion(credentials, question, {
+  const result = await session.run('https://api-dinsight.ke.com/api/threads', async value => {
+    // A refreshed candidate must pass whoami before creating a new question.
+    const checked = await fetchDinsightMe(value);
+    if (checked.statusCode !== 200) return checked;
+    return streamDinsightQuestion(value, question, {
     clusterId,
     assistantId,
     modelName: DINSIGHT_DEFAULT_MODEL,
     mode: DINSIGHT_DEFAULT_MODE,
     timeout: 180000
-  });
+    });
+  }, {readOnly:true});
 
   if (result.statusCode === 401 || result.statusCode === 302) {
     console.error('❌ Dinsight 登录态已失效，请重新复制 prd-assistant-token-prod');

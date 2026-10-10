@@ -18,18 +18,39 @@
  */
 
 import https from 'node:https';
+import { createCredentialSession, isLoginFailure } from './common/browser_credentials.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { URL } from 'node:url';
-import { loadFeciCookie, saveFeciCookie, loadCloudCookie, saveCloudCookie } from './common/credentials.js';
+import { loadFeciCookie, saveFeciCookie, loadCloudCookie, saveCloudCookie, loadShipwrightCookie, saveShipwrightCookie } from './common/credentials.js';
 import { getFeciJobMeta, saveFeciJobMeta } from './common/services.js';
 
 const FECI_HOST = 'https://feci-next.ke.com';
 
+
+const credentialSessions = new Map();
+async function doRequest(urlStr, options = {}, ignoredCookie = '') {
+  const url = new URL(urlStr.startsWith('http') ? urlStr : `${FECI_HOST}${urlStr}`);
+  let session = credentialSessions.get(url.origin);
+  if (!session) {
+    const configs = {
+      'https://cloud.intra.ke.com': {load:loadCloudCookie, save:saveCloudCookie, explicit:Boolean(process.env.CLOUD_COOKIE)},
+      'https://shipwright.ke.com': {load:loadShipwrightCookie, save:saveShipwrightCookie, explicit:Boolean(process.env.SHIPWRIGHT_COOKIE)},
+      'https://feci-next.ke.com': {load:loadFeciCookie, save:saveFeciCookie, explicit:Boolean(process.env.FECI_COOKIE), isAuthFailure:r=>isLoginFailure(r) || r.json?.code===4000}
+    };
+    if (!configs[url.origin]) throw new Error('不支持的凭据目标站点');
+    session = createCredentialSession(configs[url.origin]);
+    credentialSessions.set(url.origin, session);
+  }
+  const method = options.method || (options.body ? 'POST' : 'GET');
+  const readOnly = method === 'GET' || (method === 'POST' && /^\/apis\/cloud-application\/list\/virtual-service\/integration\/record(?:\/[^/]+)?$/.test(url.pathname));
+  return session.run(url.href, cookie => rawDoRequest(url.href,options,cookie), {readOnly});
+}
+
 // ---------------- 基础 HTTP 请求封装 ----------------
 
-function doRequest(urlStr, options = {}, cookie = '') {
+function rawDoRequest(urlStr, options = {}, cookie = '') {
   return new Promise((resolve) => {
     const url = new URL(urlStr.startsWith('http') ? urlStr : `${FECI_HOST}${urlStr}`);
     const postBody = options.body;
@@ -387,12 +408,7 @@ async function deployFrontendToCloudConsole({
   console.log(`   目标环境: ${envType}`);
 
   const cookie = cloudCookie || loadCloudCookie();
-  if (!cookie) {
-    console.log(`\n⚠️ 未检测到服务云 (cloud.intra.ke.com) 登录凭证，跳过服务云发布步骤。`);
-    console.log(`💡 如需自动部署至测试工作负载，请配置凭证:`);
-    console.log(`   node scripts/feci_deploy.js --set-cloud-cookie "<完整 Cookie 字符串>"`);
-    return null;
-  }
+
 
   // 1. 获取工作负载
   console.log(`   🔍 正在查询服务 [${serviceId}] 的 [${envType}] 工作负载...`);
@@ -647,10 +663,7 @@ async function main() {
 
   // 5. 读取 FeCI 凭证
   const cookie = loadFeciCookie();
-  if (!cookie) {
-    printCredentialGuide('未找到有效凭证');
-    process.exit(1);
-  }
+
 
   // 6. 搜索模式
   const searchIdx = args.findIndex(a => a === '-s' || a === '--search');

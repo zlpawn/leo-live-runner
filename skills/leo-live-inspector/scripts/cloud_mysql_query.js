@@ -12,13 +12,14 @@
  */
 
 import http from 'node:http';
+import { createCredentialSession } from './common/browser_credentials.js';
 import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadServiceCatalog, resolveAppId } from './common/services.js';
-import { SHRIMP_LIVE_DIR } from './common/credentials.js';
+import { SHRIMP_LIVE_DIR, loadCloudConsoleToken, saveCloudConsoleToken } from './common/credentials.js';
 import { parseXlsxBase64WithPython } from './common/xlsx.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,6 +28,15 @@ const __dirname = path.dirname(__filename);
 const CONFIG_DIR = SHRIMP_LIVE_DIR;
 const TOKEN_FILE = path.join(CONFIG_DIR, 'cloud_token.json');
 const CATALOG_FILE = path.join(CONFIG_DIR, 'db_catalog.json');
+
+let credentials;
+async function getJson(url, token) {
+  const result = await credentials.run(url, value => rawGetJson(url, value), {readOnly:true});
+  return result?.data;
+}
+async function postJson(url, payload, token) {
+  return credentials.run(url, value => rawPostJson(url, payload, value), {readOnly:true});
+}
 
 // 从统一服务注册表动态加载服务到端口和库名的映射
 function loadPresetServiceDbMapping() {
@@ -47,12 +57,12 @@ function loadPresetServiceDbMapping() {
 
 const SERVICE_DB_MAPPING = loadPresetServiceDbMapping();
 
-function getJson(urlStr, token) {
+function rawGetJson(urlStr, token) {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
     const isHttps = url.protocol === 'https:';
     const client = isHttps ? https : http;
-    client.get({
+    const req = client.get({
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
@@ -66,9 +76,9 @@ function getJson(urlStr, token) {
       res.setEncoding('utf8');
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
-        try { resolve(JSON.parse(raw)); } catch { resolve(null); }
+        try { resolve({statusCode:res.statusCode,headers:res.headers,data:JSON.parse(raw)}); } catch { resolve({statusCode:res.statusCode,headers:res.headers,data:null,error:"INVALID_JSON"}); }
       });
-    }).on('error', () => resolve(null)).on('timeout', () => resolve(null));
+    }).on('error', () => resolve(null)).on('timeout', () => { req.destroy(); resolve(null); });
   });
 }
 
@@ -104,10 +114,7 @@ async function loadDbCatalog(token, forceRefresh = false) {
       }
     } catch {}
   }
-  if (token) {
-    return await fetchDbCatalog(token);
-  }
-  return [];
+  return await fetchDbCatalog(token);
 }
 
 function printTokenGuide() {
@@ -142,59 +149,8 @@ function printTokenGuide() {
 `);
 }
 
-function parseNetscapeCookieText(content) {
-  const lines = content.split('\n');
-  for (const line of lines) {
-    if (!line || line.startsWith('#')) continue;
-    const parts = line.split('\t');
-    if (parts.length >= 7) {
-      const name = parts[5].trim();
-      const value = parts[6].trim();
-      if (name === 'cloud_console_token_egg') {
-        return value;
-      }
-    }
-  }
-  return null;
-}
-
 function loadToken() {
-  if (process.env.CLOUD_MYSQL_TOKEN) {
-    return process.env.CLOUD_MYSQL_TOKEN.trim();
-  }
-
-  // 1. 优先检测插件导出到本地网关的 cookies 文件 (cookies-cloud.intra.ke.com.txt 等)
-  const candidateFiles = [
-    path.join(process.cwd(), 'cookies-cloud.intra.ke.com.txt'),
-    path.join(process.cwd(), 'cookies.txt'),
-    path.join(os.homedir(), 'Downloads', 'cookies-cloud.intra.ke.com.txt'),
-    path.join(os.homedir(), 'Downloads', 'cookies.txt')
-  ];
-
-  for (const file of candidateFiles) {
-    if (fs.existsSync(file)) {
-      try {
-        const content = fs.readFileSync(file, 'utf8');
-        const token = parseNetscapeCookieText(content);
-        if (token) {
-          // 自动同步刷入标准配置
-          saveToken(token);
-          return token;
-        }
-      } catch (e) {}
-    }
-  }
-
-  // 2. 检查本地持久化配置文件
-  if (fs.existsSync(TOKEN_FILE)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
-      if (data.cloud_console_token_egg) {
-        return data.cloud_console_token_egg.trim();
-      }
-    } catch (e) {}
-  }
-  return null;
+  return process.env.CLOUD_MYSQL_TOKEN?.trim() || loadCloudConsoleToken();
 }
 
 function saveToken(token) {
@@ -208,14 +164,11 @@ function saveToken(token) {
   } else {
     cleanToken = cleanToken.replace(/;.*$/, '').trim();
   }
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify({
-    cloud_console_token_egg: cleanToken,
-    updated_at: new Date().toISOString()
-  }, null, 2), 'utf8');
-  console.log(`✅ Token 已成功保存至: ${TOKEN_FILE} (${cleanToken.slice(0, 16)}...)`);
+  saveCloudConsoleToken(cleanToken);
+  console.log(`✅ Token 已成功保存至: ${TOKEN_FILE}`);
 }
 
-function postJson(urlStr, payload, token) {
+function rawPostJson(urlStr, payload, token) {
   return new Promise((resolve) => {
     const url = new URL(urlStr);
     const bodyStr = JSON.stringify(payload);
@@ -242,11 +195,11 @@ function postJson(urlStr, payload, token) {
       res.on('data', chunk => rawData += chunk);
       res.on('end', () => {
         if (res.statusCode === 302 || (res.headers.location && res.headers.location.includes('login.ke.com'))) {
-          return resolve({ success: false, isRedirect: true, statusCode: res.statusCode });
+          return resolve({ success: false, isRedirect: true, statusCode: res.statusCode, headers: res.headers });
         }
         try {
           const json = JSON.parse(rawData);
-          resolve({ success: true, data: json, statusCode: res.statusCode });
+          resolve({ success: true, data: json, statusCode: res.statusCode, headers: res.headers });
         } catch (e) {
           resolve({ success: false, raw: rawData, statusCode: res.statusCode, error: e.message });
         }
@@ -344,11 +297,10 @@ async function main() {
   }
 
   const token = tempToken || loadToken();
-  if (!token) {
-    console.error(`❌ 未检测到服务云凭证 (cloud_console_token_egg)！`);
-    printTokenGuide();
-    process.exit(1);
-  }
+  credentials = createCredentialSession({load:()=>token, save:saveCloudConsoleToken,
+    explicit:Boolean(tempToken || process.env.CLOUD_MYSQL_TOKEN || process.env.CLOUD_CONSOLE_TOKEN), names:['cloud_console_token_egg'],
+    fromCookies:cookies=>cookies.find(c=>c.name==='cloud_console_token_egg')?.value || ''});
+
 
   // 2. 列出所有数据库资产
   if (args.includes('--list-dbs') || args.includes('--catalog')) {

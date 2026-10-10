@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、以及页面数据探索中枢、Dinsight 自然语言大数据探查。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查：复用 Chrome 插件复制的 prd-assistant-token-prod，直连 Agent 流式查数。 支持本地排查流程的保存、检索复用与更新，例如“记住这次排查方法”“按上次流程查”。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、以及页面数据探索中枢、Dinsight 自然语言大数据探查。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查：自动复用 Chrome 登录态中的 prd-assistant-token-prod，直连 Agent 流式查数。 支持本地排查流程的保存、检索复用与更新，例如“记住这次排查方法”“按上次流程查”。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -12,7 +12,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 4. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
-7. **🧠 Dinsight 自然语言大数据探查**：用户复制 `prd-assistant-token-prod` 后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
+7. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
 8. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
@@ -220,7 +220,7 @@ AI 后台执行 `node scripts/apollo_modify.js <appId|alias> [namespace] <key> <
    - 目标站点：`http://test-apollo.portal.life.ke.com`
    - 核心凭证 Cookie 键名：**`jt_apollo_login_token`**
    - 本地持久化路径：`~/.shrimp/skills/live-inspector/test_apollo_cookie.json`
-   - 当凭证失效时，AI 必须明确指引用户使用已有的 Chrome 扩展（**Leo cookie.txt Locally**）复制 **`jt_apollo_login_token`**，或通过 F12 复制该 Cookie。**严禁出现任何引导用户安装 `ego-browser` 的言论。**
+   - 凭证缺失或明确失效时，脚本默认通过已有 Chrome 扩展（**Leo cookie.txt Locally**）自动获取；浏览器未登录时引导用户登录后重试，手动复制仅作兜底。**严禁出现任何引导用户安装 `ego-browser` 的言论。**
 
 ---
 
@@ -314,13 +314,8 @@ AI 后台执行 `node scripts/dinsight_query.js "<自然语言问题>" [options]
 | `--whoami` | - | `false` | 只验证登录态，不发起提问 |
 | `--json` | - | `false` | 输出 SSE 摘要与原始流 |
 
-> 🔑 **凭证习惯（优先复制 Cookie 标头）**：
-> 1. 打开 `https://dinsight.ke.com/` 并确认已登录；
-> 2. 点击 **Leo cookie.txt Locally**，顶部域名改成 **`ke.com`**；
-> 3. **首选**：点【复制 Cookie 标头】，把整串 `k1=v1; k2=v2` 发给 AI。AI 必须立刻后台执行 `--set-token`，**禁止把完整 Cookie 回显给用户**；
-> 4. 脚本只会保留这 5 个 Key：`prd-assistant-token-prod`、`access_token`、`login_ucid`、`security_ticket`、`csrf_token`。其余一律丢弃，避免 `400 Request Header Or Cookie Too Large`；
-> 5. 保存成功后，AI 只回复：已登录账号 / 实际保留了哪些 Key / 可以开始提问。不要复述 Cookie 值；
-> 6. **次选**：只复制 `prd-assistant-token-prod`。若 `--whoami` 返回 401，再请用户改复制 Cookie 标头。主 Token 是 HttpOnly，不要引导用 F12 的 `document.cookie`。
+> 🔑 **凭证自动获取**：在 Chrome 登录 Dinsight，并启用本 skill 随附的插件（升级后重新加载）。缺少凭据或明确鉴权失败时，脚本自动读取适用于 `api-dinsight.ke.com` 的 Cookie，并用 `--whoami` 对应接口验证后保存。
+> 只保留 `prd-assistant-token-prod`、`access_token`、`login_ucid`、`security_ticket`、`csrf_token`。浏览器未登录时先登录再重试；自动获取不可用时，可用插件复制 Cookie 标头并通过 `--set-token` 保存。不要回显 Cookie 值，HttpOnly Token 不能用 `document.cookie` 读取。
 
 > ⚠️ **查数执行注意**：
 > 1. Dinsight 是 SSE 长连接，CLI 超时必须 ≥ 180s。禁止用默认 10s HTTP 超时，否则流未结束就会被掐断；
@@ -379,7 +374,8 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 | `--list-images` | `-l` | `false` | 查询并列出该微服务历史构建成功的镜像列表、版本 Tag 与生成时间 |
 | `--dry-run` | - | `false` | 安全预检模式，仅解析并打印识别到的 CI 流水线、工作负载配置与分支信息，不发起实际写操作 |
 | `--timeout` | - | `15m` | 构建轮询最大超时时间 (支持 `10m`, `900s` 等) |
-| `--set-cookie` | - | - | 保存更新服务云与 Shipwright 平台统一 Session Cookie 凭证至本地缓存 |
+| `--set-cookie` | - | - | 手动保存服务云 Cookie 至本地缓存 |
+| `--set-shipwright-cookie` | - | - | 手动保存 Shipwright 独立 Cookie |
 | `--json` | - | `false` | 输出纯 JSON 数据结果 |
 
 ---
@@ -454,55 +450,37 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 
 ---
 
-## 🔌 7. 跨平台 Token/Cookie 凭证获取与 Chrome 插件引导规范
+## 🔌 7. 自动获取 Token/Cookie
 
-当执行查库、日志自愈或 CI/CD 构建部署遇到 **凭证缺失** 或 **凭证过期（302 重定向 / 401 鉴权失败）** 时，AI 必须根据用户操作系统（Mac / Windows）主动提供清晰、精准的引导，严禁仅抛出冷冰冰的报错或模糊的 F12 指引：
+默认复用现有缓存；仅在凭据缺失或明确登录失败时，按需启动 `credential_relay`，从已登录浏览器自动获取一次。新凭据经只读接口验证成功后才写缓存。普通 403、500、超时不会触发刷新；显式 `--token`、`--cookie` 或环境变量优先，不自动切换账号。构建、发布等写请求不会自动重放。
 
-### 🔑 核心凭证 Key 速查
-* **服务云构建部署 / Shipwright 流水线**：目标页面 `https://cloud.intra.ke.com` 与 `https://shipwright.ke.com` ➔ 核心凭证：**完整 Cookie 字符串**（包含 `EGG_SESS` / `session_id`，兼具 `cloud_console_token_egg`）
-* **FeCI 前端构建发布平台 (青蝉)**：目标页面 `https://feci-next.ke.com` ➔ 核心凭证：**完整 Cookie 字符串**（通过 `node scripts/feci_deploy.js --set-cookie` 写入）
-* **Apollo 测试环境配置修改**：目标页面 `http://test-apollo.portal.life.ke.com` ➔ 核心 Key: **`jt_apollo_login_token`**
-* **服务云 MySQL 查库**：目标页面 `https://cloud.intra.ke.com/database/mysql/self-check` ➔ 核心 Key: **`cloud_console_token_egg`**（`2.0...` 开头长串）
-* **FAST 日志全量自愈**：目标页面 `https://fast.ke.com` ➔ 核心 Key: **`_secondx`**（32位十六进制字符串）
-* **Dinsight 自然语言查数**：目标页面 `https://dinsight.ke.com/` ➔ 插件域名填 **`ke.com`** ➔ 核心 Key: **`prd-assistant-token-prod`**（必要时再复制 **`csrf_token`**）
+### 安装与使用
 
----
+1. 在 Chrome 打开 `chrome://extensions/`，开启开发者模式，选择【加载已解压的扩展程序】。
+2. 选择当前 skill 下的 `resources/chrome_extension`。AI 应提供当前生效的绝对路径；macOS 可用 `Cmd + Shift + G` 输入路径，Windows 可在文件选择器地址栏输入。
+3. 已安装旧版时，将扩展更新到本目录的 **1.3.0** 并点击【重新加载】。
+4. 在同一浏览器普通 Profile 登录目标网站，正常执行 skill 命令即可，无需复制或配对文件。
 
-### 🖥️ 分平台 Chrome 插件手动导入与引导流程（首选推荐）
+插件约每 60 秒探测本机 `127.0.0.1:19528`；没有任务时不读 Cookie。业务进程只在等待凭据时监听，任务仅存内存，拿到结果、超时或取消后关闭。默认最长等待 180 秒；系统休眠可能延迟探测。超时请确认浏览器和扩展已开启、目标网站已登录，然后重试。
 
-#### 🍏 macOS 用户引导指引：
-1. **手动在 Chrome 加载插件**：
-   * 打开 `chrome://extensions/` 并开启右上角【开发者模式】；
-   * 点击左上角【加载已解压的扩展程序】；
-   * 按快捷键 `Cmd + Shift + G`，粘贴 AI 给出的插件绝对路径，回车并确认；
-   * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
-     `~/.agents/skills/leo-live-inspector/resources/chrome_extension`（或工程下的 `resources/chrome_extension`）。
-2. **获取凭证**：
-   * 打开目标页面（服务云、FAST 或 Dinsight）；
-   * 点击浏览器右上角拼图中的 **Leo cookie.txt Locally** 图标；
-   * 在列表中找到对应 Key（**`cloud_console_token_egg`**、**`_secondx`** 或 Dinsight 的 **`prd-assistant-token-prod`**），点击右侧 **【复制】** 发给 AI；
-   * 问 Dinsight 时，插件顶部域名必须改成 **`ke.com`**，并优先点 **【复制 Cookie 标头】**；AI 只保留 `prd-assistant-token-prod` / `access_token` / `login_ucid` / `security_ticket` / `csrf_token`；
-   * *（或者直接点击【📥 下载 cookies.txt】，脚本会自动从 Downloads 目录读取，免手动粘贴）*。
+### 平台范围
 
-#### 🪟 Windows 用户引导指引：
-1. **手动在 Chrome 加载插件**：
-   * 打开 `chrome://extensions/` 并开启右上角【开发者模式】；
-   * 点击左上角【加载已解压的扩展程序】；
-   * 在弹窗路径栏粘贴 AI 给出的插件绝对路径并回车确认；
-   * 常用安装路径（AI 应优先给出当前生效的绝对路径）：
-     `%USERPROFILE%\.agents\skills\leo-live-inspector\resources\chrome_extension`（或工程下的 `resources\chrome_extension`）。
-2. **获取凭证**：
-   * 打开服务云、FAST 或 Dinsight 页面，点击插件图标；
-   * 对应 Key 点击 **【复制】** 发给 AI（查库复制 `cloud_console_token_egg`，日志复制 `_secondx`，Dinsight 复制 `prd-assistant-token-prod`）；
-   * 问 Dinsight 时，插件顶部域名必须改成 **`ke.com`**。
+| 场景 | 自动获取范围 |
+| --- | --- |
+| 服务云 MySQL | `cloud_console_token_egg` |
+| 服务云构建部署 | 适用于服务云请求 URL 的 Cookie |
+| Shipwright | 独立获取和缓存，不复用服务云整串 Cookie |
+| FeCI | 独立获取适用于 `feci-next.ke.com` 的 Cookie |
+| Apollo 测试 Portal | 适用于 Portal 的 Cookie（包括 `jt_apollo_login_token`） |
+| Dinsight | 上述 5 个 Key，按实际认证 API URL 获取 |
+| Paoding 测试日志 | 匿名优先；明确鉴权失败后尝试缓存及浏览器 |
+| FAST / Apollo ConfigService | 沿用现有访问流程，不新增强制凭据要求 |
 
----
+第一版仅支持浏览器 Cookie，包括 HttpOnly Cookie 和存于 Cookie 中的 Token；不读取 localStorage、sessionStorage 或请求头 Token。仅支持同机单个普通 Profile，不支持隐身、分区 Cookie 或远程浏览器。信任本机程序，无配对密钥；端口被其他进程占用时返回 `RELAY_BUSY`，稍后重试。
 
-### 🛠️ 备选方案：无插件场景下的 F12 手动提取（受限环境）
-如果用户由于安全策略无法安装插件，AI 指引其按以下步骤手动复制：
-1. 在已登录的目标页面按 `F12` 打开控制台；
-2. 切换到【Application (应用)】➔ 左侧展开【Cookies】➔ 点击对应域名；
-3. 搜索并双击复制对应的 Key（查库找 `cloud_console_token_egg`，日志找 `_secondx`），复制后发给 AI。
+### 手动兜底
+
+设置 `LEO_INSPECTOR_BROWSER_CREDENTIALS=off` 可关闭自动获取，保留已有缓存和手动设置参数。不能安装插件时，可在浏览器开发者工具 Application → Cookies 复制目标凭据，或使用插件导出 Cookie，再调用业务脚本的 `--set-token` / `--set-cookie`。Shipwright 使用 `ci_deploy.js --set-shipwright-cookie`。不要在回复、日志或代码中记录凭据值。
 
 ---
 

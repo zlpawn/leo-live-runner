@@ -1,3 +1,4 @@
+import { createCredentialRelayClient } from "./credential-relay.mjs";
 import { createMultiUrlPollLoop } from "./poll-loop.mjs";
 import { createCommandQueue } from "./command-queue.mjs";
 import { shouldStopNetworkCapture } from "./background-lifecycle.mjs";
@@ -39,7 +40,7 @@ const DEFAULT_BRIDGE_URL = "http://127.0.0.1:19527";
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:8788";
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const POLL_WAIT_MS = 25_000;
-const OFFLINE_BACKOFF_MS = 1_000;
+const OFFLINE_BACKOFF_MS = 60_000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -604,14 +605,17 @@ async function init() {
 }
 
 // Keep-alive with alarms
-chrome.alarms.create("bridge_heartbeat", { periodInMinutes: 0.4 });
-chrome.alarms.create("bridge_claim", { periodInMinutes: 0.1 });
+chrome.alarms.get("bridge_heartbeat").then(alarm => {
+  if (!alarm || alarm.periodInMinutes !== 1) chrome.alarms.create("bridge_heartbeat", { periodInMinutes: 1 });
+});
+chrome.alarms.clear("bridge_claim");
+createCredentialRelayClient().start().catch(() => undefined);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "bridge_heartbeat") sendHeartbeats();
   if (alarm.name === "bridge_claim" || alarm.name === "bridge_heartbeat") startPollLoop();
 });
 
-setInterval(sendHeartbeats, HEARTBEAT_INTERVAL_MS);
+// Alarm events restore polling after service-worker suspension.
 
 chrome.runtime.onInstalled.addListener(init);
 chrome.runtime.onStartup.addListener(init);
