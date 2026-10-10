@@ -182,7 +182,18 @@ export function main(argv = process.argv.slice(2)) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isDirectExecution() {
+  if (!process.argv[1]) return false;
+  try {
+    const invoked = fs.realpathSync(path.resolve(process.argv[1]));
+    const current = fs.realpathSync(fileURLToPath(import.meta.url));
+    return invoked === current;
+  } catch {
+    return path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isDirectExecution()) {
   try { main(); } catch (error) {
     // Avoid echoing JSON parser excerpts, which may contain unredacted input.
     console.error(JSON.stringify({ error: error instanceof SyntaxError ? 'JSON 格式无效，请检查输入或流程元数据' : error.message }));

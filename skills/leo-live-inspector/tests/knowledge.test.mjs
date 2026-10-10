@@ -8,6 +8,34 @@ import { fileURLToPath } from 'node:url';
 import { knowledgeDirectory, readWorkflow, saveWorkflow, searchWorkflows } from '../scripts/knowledge.js';
 
 const cli = fileURLToPath(new URL('../scripts/knowledge.js', import.meta.url));
+
+test('CLI runs through a symlinked skill directory', t => {
+  const root = temp(t);
+  const linked = path.join(path.dirname(root), 'installed-skill');
+  fs.symlinkSync(path.dirname(cli), linked, process.platform === 'win32' ? 'junction' : 'dir');
+  const result = spawnSync(process.execPath, [path.join(linked, 'knowledge.js'), 'list'], {
+    encoding: 'utf8', env: { ...process.env, LEO_INSPECTOR_KNOWLEDGE_DIR: root }
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(result.stdout.trim(), '', 'linked CLI must execute instead of silently exiting');
+  assert.deepEqual(JSON.parse(result.stdout), { directory: root, workflows: [], warnings: [] });
+  assert.equal(fs.existsSync(root), false);
+});
+
+test('importing through a symlink does not run CLI main', t => {
+  const root = temp(t);
+  const directory = path.dirname(root);
+  fs.symlinkSync(path.dirname(cli), path.join(directory, 'installed-skill'), process.platform === 'win32' ? 'junction' : 'dir');
+  const importer = path.join(directory, 'importer.mjs');
+  fs.writeFileSync(importer, "import { main } from './installed-skill/knowledge.js';\nconsole.log(typeof main);\n");
+  const result = spawnSync(process.execPath, [importer, 'list'], {
+    encoding: 'utf8', env: { ...process.env, LEO_INSPECTOR_KNOWLEDGE_DIR: root }
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'function');
+  assert.equal(fs.existsSync(root), false);
+});
+
 const sample = {
   id: 'order-sync', title: '工单状态未同步', summary: '按工单号定位同步处理过程',
   services: ['iot'], keywords: ['工单', '同步', '状态'], parameters: ['env', 'orderId', 'from', 'to'],
