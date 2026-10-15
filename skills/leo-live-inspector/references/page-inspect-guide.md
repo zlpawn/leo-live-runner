@@ -1,6 +1,6 @@
 # 🌐 后台页面点击与数据探查操作指南 (Page Inspection Guide)
 
-本指南指导 AI 借助本地浏览器自动化探针（CDP / Chrome Extension / ego-browser）对各业务后台页面进行自动化点击、数据过滤与状态审查。
+本指南指导 AI 借助本地浏览器自动化探针（Chrome Extension / CDP）对各业务后台页面进行自动化点击、数据过滤与状态审查。
 
 ---
 
@@ -14,16 +14,13 @@
 
 ## 🛠️ 交互模式
 
-### 模式 1：Chrome 扩展探针交互（推荐）
+### Chrome 扩展探针交互（推荐）
 * **依赖**：本地运行的 `resources/chrome_extension`（监听本地 `19527` 端口）；
 * **优势**：借用用户已登录的浏览器会话，免去统一 SSO 重新登录的鉴权问题；
 * **流程**：
   1. 通过扩展 API 发送导航指令至目标后台 URL；
   2. 注入 DOM 选择器点击查询按钮或输入过滤参数；
   3. 拦截 Network response 获取结构化 JSON 或解析 Table DOM 节点。
-
-### 模式 2：macOS 原生 `ego-browser` 交互
-* 支持直接在无头/可视化窗口中执行页面交互脚本。
 
 ---
 

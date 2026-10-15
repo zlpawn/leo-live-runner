@@ -7,7 +7,7 @@
  *   1. 纯 HTTP 毫秒级直连：直连 Paoding Loki 网关，单次查询 50ms~100ms，无需等待浏览器渲染；
  *   2. 全环境自动漫游：同时支持服务云标准容器与大禹平台多泳道 Pod（如 lixiaojing02 / lixiaojing03）；
  *   3. 丰富过滤组合：支持时间范围 (--time / --from / --to)、级别过滤 (--level)、关键词 (-q) 与 TraceId 精准回溯；
- *   4. 凭证自愈与静默持久化：自动读取 ~/.shrimp/skills/live-inspector/paoding_cookie.json，支持 ego-browser 自动补足；
+ *   4. 凭证自愈与静默持久化：自动读取 ~/.shrimp/skills/live-inspector/paoding_cookie.json，支持浏览器凭证自动补足；
  *   5. 高可读性呈现：结构化终端表格、Trace 链路日志与 --json 模式。
  */
 

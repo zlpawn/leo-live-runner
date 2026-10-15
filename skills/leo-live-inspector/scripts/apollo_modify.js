@@ -163,8 +163,24 @@ async function main() {
   const releaseAttrLabel = RELEASE_ATTR_LABEL[releaseAttr] || '业务开关 (SWITCH)';
 
   const cookie = customCookie || loadApolloTestCookie();
-  credentials = createCredentialSession({load:()=>cookie, save:saveApolloTestCookie,
-    explicit:Boolean(customCookie || process.env.APOLLO_TEST_COOKIE)});
+  credentials = createCredentialSession({
+    load: () => cookie,
+    save: saveApolloTestCookie,
+    explicit: Boolean(customCookie || process.env.APOLLO_TEST_COOKIE),
+    preflight: async ({ run }) => {
+      const checkPath = `/apps/${encodeURIComponent(canonicalApp)}/envs/${env}/clusters/${encodeURIComponent(cluster)}/namespaces`;
+      const checkUrl = `http://${DEFAULT_PORTAL_HOST}${checkPath}`;
+      await run(checkUrl, async c => {
+        return rawRequestHttp({
+          hostname: DEFAULT_PORTAL_HOST,
+          port: 80,
+          path: checkPath,
+          method: 'GET',
+          headers: { ...commonHeaders, Cookie: c }
+        });
+      }, { readOnly: true });
+    }
+  });
 
   const commonHeaders = {
     'Cookie': cookie,

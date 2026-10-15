@@ -57,3 +57,42 @@ test('browser returning the same rejected credential does not replay request',as
  await assert.rejects(s.run(target,async()=>{sent++;return {statusCode:401};},{readOnly:true}),{code:'CREDENTIAL_REJECTED'});
  assert.equal(sent,1);
 });
+test('configured preflight automatically validates before write operations',async()=>{
+ let preflights=0;let writes=0;
+ const s=session({
+  load:()=>'',
+  getCookies:async()=>fresh,
+  preflight:async({run})=>{
+   preflights++;
+   await run('https://example.com/api/check',async()=>({statusCode:200}),{readOnly:true});
+  }
+ });
+ const res=await s.run(target,async cookie=>{
+  writes++;
+  assert.equal(cookie,'sid=new');
+  return {statusCode:200};
+ });
+ assert.equal(res.statusCode,200);
+ assert.equal(preflights,1);
+ assert.equal(writes,1);
+});
+test('configured preflight refreshes expired cached credential before write',async()=>{
+ let gets=0;let writes=0;
+ const s=session({
+  load:()=> 'sid=old',
+  getCookies:async()=>{gets++;return fresh;},
+  preflight:async({run})=>{
+   await run('https://example.com/api/check',async cookie=>{
+    return cookie==='sid=old' ? {statusCode:401} : {statusCode:200};
+   },{readOnly:true});
+  }
+ });
+ const res=await s.run(target,async cookie=>{
+  writes++;
+  assert.equal(cookie,'sid=new');
+  return {statusCode:200};
+ });
+ assert.equal(res.statusCode,200);
+ assert.equal(gets,1);
+ assert.equal(writes,1);
+});

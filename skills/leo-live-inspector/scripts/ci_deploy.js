@@ -27,9 +27,25 @@ async function doRequest(urlStr, options = {}, ignoredCookie = '') {
   let session = credentialSessions.get(url.origin);
   if (!session) {
     const configs = {
-      'https://cloud.intra.ke.com': {load:loadCloudCookie, save:saveCloudCookie, explicit:Boolean(process.env.CLOUD_COOKIE)},
-      'https://shipwright.ke.com': {load:loadShipwrightCookie, save:saveShipwrightCookie, explicit:Boolean(process.env.SHIPWRIGHT_COOKIE)},
-
+      'https://cloud.intra.ke.com': {
+        load: loadCloudCookie,
+        save: saveCloudCookie,
+        explicit: Boolean(process.env.CLOUD_COOKIE),
+        preflight: async ({ run }) => {
+          await run('https://cloud.intra.ke.com/apis/ci/v1/deployment/images/self-check?pageNumber=1&pageSize=1', c => rawDoRequest('https://cloud.intra.ke.com/apis/ci/v1/deployment/images/self-check?pageNumber=1&pageSize=1', { method: 'GET' }, c), { readOnly: true });
+        }
+      },
+      'https://shipwright.ke.com': {
+        load: loadShipwrightCookie,
+        save: saveShipwrightCookie,
+        explicit: Boolean(process.env.SHIPWRIGHT_COOKIE),
+        preflight: async ({ run }) => {
+          await run('https://shipwright.ke.com/workflow-context/v1/workflows/query?pageNumber=1&pageSize=1', c => rawDoRequest('https://shipwright.ke.com/workflow-context/v1/workflows/query?pageNumber=1&pageSize=1', {
+            method: 'POST',
+            body: { pageNumber: 1, pageSize: 1 }
+          }, c), { readOnly: true });
+        }
+      },
     };
     if (!configs[url.origin]) throw new Error('不支持的凭据目标站点');
     session = createCredentialSession(configs[url.origin]);

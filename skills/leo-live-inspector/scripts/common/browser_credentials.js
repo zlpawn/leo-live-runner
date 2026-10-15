@@ -28,7 +28,7 @@ export function isCredentialSuccess(response) {
 // A small per-service session: lazy load, at most one browser fetch, no write replay.
 export function createCredentialSession({ load = () => '', save = () => {}, explicit = false,
   anonymous = false, fallbackLoad, names, fromCookies = cookiesToHeader, isAuthFailure = isLoginFailure,
-  isSuccess = isCredentialSuccess, getCookies = getBrowserCookies } = {}) {
+  isSuccess = isCredentialSuccess, getCookies = getBrowserCookies, preflight } = {}) {
   let value;
   let fetched = false;
   let pendingSave = false;
@@ -44,7 +44,12 @@ export function createCredentialSession({ load = () => '', save = () => {}, expl
   };
   async function run(url, send, { readOnly = false } = {}) {
     current();
-    if (!readOnly && !validated) throw Object.assign(new Error('写操作前需要成功的只读凭据检查'), {code:'CREDENTIAL_PREFLIGHT_REQUIRED'});
+    if (!readOnly && !validated) {
+      if (typeof preflight === 'function') {
+        await preflight({ run, current });
+      }
+      if (!validated) throw Object.assign(new Error('写操作前需要成功的只读凭据检查'), {code:'CREDENTIAL_PREFLIGHT_REQUIRED'});
+    }
     if (!value && !anonymous && !explicit && !fetched) await acquire(url);
     let result = await send(value);
     if (readOnly && isAuthFailure(result) && !value && fallbackLoad && !explicit) {

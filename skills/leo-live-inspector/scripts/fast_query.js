@@ -3,11 +3,10 @@
 /**
  * 🚀 Leo Live Inspector - FAST / Kibana 极速多集群日志与全链路 Trace 检索引擎
  * 
- * 🌟 核心架构：四级阶梯式多平台自适应联动自愈架构 (Multi-Platform Tiered Self-Healing)
+ * 🌟 核心架构：三级阶梯式多平台自适应联动自愈架构 (Multi-Platform Tiered Self-Healing)
  *   1. ⚡ 一级通道（Fast-Path 极速直连）：已知微服务走纯 HTTP 毫秒级直连（< 200ms），全平台零依赖；
- *   2. 🍎 二级通道 A（macOS 智能探针）：遇新服务自动唤起 ego-browser 探针访问 fast.ke.com 动态自愈；
- *   3. 🪟 二级通道 B（Windows / 通用扩展桥接）：遇新服务通过本地 Leo Lantern 扩展（19527 端口）静默自愈；
- *   4. 📝 三级通道（人机兜底）：探针均不可用时，优雅提示手动导入 Chrome 扩展或提供集群/索引。
+ *   2. 🌐 二级通道（Chrome 扩展探针桥接）：遇新服务通过本地 Leo Lantern 扩展（19527 端口）静默自愈；
+ *   3. 📝 三级通道（人机兜底）：探针不可用时，优雅提示手动导入 Chrome 扩展或提供集群/索引。
  */
 
 import fs from 'node:fs';
@@ -15,7 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -336,80 +335,7 @@ async function queryKibanaES(cluster, index, query, fromTime, toTime, limit, off
 }
 
 /**
- * 🍎 macOS 专属探针：ego-browser
- */
-async function probeViaEgoBrowser(appCode) {
-  return new Promise((resolve) => {
-    const env = { ...process.env };
-    const localBin = path.join(os.homedir(), '.local', 'bin');
-    const extraPaths = [localBin, '/usr/local/bin', '/opt/homebrew/bin'];
-    const currentPaths = (env.PATH || '').split(path.delimiter);
-    for (const p of extraPaths) {
-      if (!currentPaths.includes(p)) currentPaths.unshift(p);
-    }
-    env.PATH = currentPaths.join(path.delimiter);
-
-    const child = spawn('ego-browser', ['nodejs'], {
-      env,
-      stdio: ['pipe', 'pipe', 'ignore']
-    });
-
-    let output = '';
-    child.stdout.on('data', d => { output += d.toString(); });
-    child.on('error', (err) => {
-      resolve({ error: `未找到 ego-browser 命令行: ${err.message}` });
-    });
-    child.on('close', (code) => {
-      try {
-        const learned = JSON.parse(output.trim());
-        resolve(learned);
-      } catch (e) {
-        resolve({ error: '解析探针输出失败: ' + output });
-      }
-    });
-
-    const cleanApp = appCode.replace(/[:_\-](prod|test|dev)$/, '');
-    const script = `
-      async function probe() {
-        const task = await useOrCreateTaskSpace('leo-fast-probe');
-        try {
-          await openOrReuseTab('https://fast.ke.com/#/search', { wait: true, timeout: 12 });
-          await click('.el-cascader input');
-          await wait(0.4);
-          await fillInput('.el-cascader input', ${JSON.stringify(cleanApp)});
-          await wait(1.5);
-          
-          await js(String.raw\`(() => {
-            const items = [...document.querySelectorAll('.el-cascader__suggestion-item')];
-            const target = items.find(it => it.textContent.includes(${JSON.stringify(cleanApp)}));
-            if (target) target.click();
-          })()\`);
-          
-          await wait(2.5);
-          const learned = await js(String.raw\`(() => {
-            const iframe = document.querySelector('iframe');
-            const src = iframe?.src || '';
-            const cluster = src.match(/https:\\/\\/[^/]+/)?.[0];
-            const index = src.match(/index:'([^']+)'/)?.[1] || src.match(/index%3A%27([^%]+)%27/)?.[1];
-            return { cluster, index };
-          })()\`);
-          cliLog(JSON.stringify(learned || {}));
-        } catch(e) {
-          cliLog(JSON.stringify({ error: e.message }));
-        } finally {
-          await completeTaskSpace('leo-fast-probe', { keep: false });
-        }
-      }
-      probe();
-    `;
-
-    child.stdin.write(script);
-    child.stdin.end();
-  });
-}
-
-/**
- * 🪟 Windows / 通用探针：Leo Lantern Chrome 扩展桥接 (127.0.0.1:19527)
+ * 🌐 通用探针：Leo Lantern Chrome 扩展桥接 (127.0.0.1:19527)
  */
 async function probeViaLanternExtension(appCode) {
   const cleanApp = appCode.replace(/[:_\-](prod|test|dev)$/, '');
@@ -588,24 +514,15 @@ async function main() {
     }
   }
 
-  // 2. 【二级通道：自愈与自学习】如果未收录或直连报错，依次尝试跨平台智能探针
+  // 2. 【二级通道：自愈与自学习】如果未收录或直连报错，尝试 Chrome 扩展桥接 (Leo Lantern)
   if (!esResult || !esResult.rawResponse) {
     let learned = null;
     let probeType = '';
 
-    // (A) 若为 macOS，优先尝试 ego-browser
-    if (process.platform === 'darwin') {
-      learned = await probeViaEgoBrowser(opts.app);
-      if (learned && learned.index) probeType = 'ego-browser';
-    }
-
-    // (B) 若 ego-browser 未命中或处于 Windows/Linux 环境，尝试 Chrome 扩展桥接 (Leo Lantern)
-    if (!learned || !learned.index) {
-      const extLearned = await probeViaLanternExtension(opts.app);
-      if (extLearned && extLearned.index) {
-        learned = extLearned;
-        probeType = 'chrome-extension';
-      }
+    const extLearned = await probeViaLanternExtension(opts.app);
+    if (extLearned && extLearned.index) {
+      learned = extLearned;
+      probeType = 'chrome-extension';
     }
 
     // (C) 探针自愈成功，持久化并重试直连

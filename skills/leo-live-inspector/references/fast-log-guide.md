@@ -34,9 +34,8 @@ AI 在接收到用户自然语言排查需求时，自动在后台组装以下�
      }
      ```
 
-2. **二级通道（跨平台双智能自愈探针）**：
-   * **🍎 macOS 探针（`ego-browser`）**：自动唤起原生 `ego-browser` 访问 `https://fast.ke.com/#/search` 门户解析最新 cluster 与 index；
-   * **🪟 Windows / 通用探针（`Leo Lantern Chrome 扩展`）**：通过本地 `19527` 端口静默借用用户日常 Chrome 提取 cluster 与 index；
+2. **二级通道（Chrome 扩展智能自愈探针）**：
+   * **Leo Lantern Chrome 扩展桥接**：通过本地 `19527` 端口静默借用用户日常 Chrome 提取 cluster 与 index；
    * **自动纠错缓存**：探针提取成功后，自动覆写更新本地缓存 `~/.shrimp/skills/live-runner/service_map.json` 并重试直连，实现 **100% 全自动无人干预自愈**。
 
 3. **排序与时序保障 (`sort`)**：
