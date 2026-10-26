@@ -2,11 +2,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { Kafka, logLevel } from 'kafkajs';
+import { createRequire } from 'node:module';
 import { SHRIMP_LIVE_DIR, ensureShrimpLiveDir } from './credentials.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
+
+function loadKafkaModule() {
+  const candidates = [
+    'kafkajs',
+    path.join(__dirname, '..', '..', 'node_modules', 'kafkajs'),
+    '/usr/lib/node_modules/kafkajs',
+    '/usr/local/lib/node_modules/kafkajs'
+  ];
+  for (const c of candidates) {
+    try {
+      return require(c);
+    } catch {}
+  }
+  return null;
+}
+
+const _kafkaMod = loadKafkaModule();
+export const Kafka = _kafkaMod ? _kafkaMod.Kafka : null;
+export const logLevel = _kafkaMod ? _kafkaMod.logLevel : { NOTHING: 0, ERROR: 1, WARN: 2, INFO: 4, DEBUG: 5 };
 
 export const DEFAULT_KAFKA_FILE = path.join(__dirname, '..', '..', 'resources', 'default_kafka.json');
 export const LOCAL_KAFKA_FILE = path.join(SHRIMP_LIVE_DIR, 'kafka_catalog.json');
@@ -251,11 +271,19 @@ export function createKafkaClient({ brokers, clientId = 'leo-live-inspector' }) 
     throw new Error('Kafka Broker 地址为空，请检查配置或手动传入 -b <broker:port>');
   }
 
-  return new Kafka({
+  const mod = _kafkaMod || loadKafkaModule();
+  if (!mod || !mod.Kafka) {
+    throw new Error('未找到 kafkajs 模块，请检查 /usr/lib/node_modules/kafkajs 是否存在。');
+  }
+
+  const TargetKafka = mod.Kafka;
+  const targetLogLevel = mod.logLevel || {};
+
+  return new TargetKafka({
     clientId,
     brokers: brokerList,
     connectionTimeout: 5000,
     requestTimeout: 10000,
-    logLevel: logLevel.NOTHING,
+    logLevel: targetLogLevel.NOTHING || 0,
   });
 }

@@ -136,6 +136,43 @@ export function saveApolloTestCookie(cookieStr) {
   });
 }
 
+/** Luke 权限中心 Cookie (支持测试环境与线上生产环境) */
+export function loadLukeCookie({ env = 'test' } = {}) {
+  const isProd = env === 'prod' || env === 'production';
+  return loadCookie({
+    envVar: isProd ? 'LUKE_PROD_COOKIE' : 'LUKE_TEST_COOKIE',
+    jsonFileName: isProd ? 'luke_cookie.json' : 'test_luke_cookie.json',
+    targetUrl: isProd ? 'https://luke.ke.com' : 'https://test-luke.ke.com',
+    downloadCandidates: isProd
+      ? ['cookies-luke.ke.com.txt', 'cookies-luke.txt']
+      : ['cookies-test-luke.ke.com.txt', 'cookies-test-luke.txt']
+  });
+}
+
+export function saveLukeCookie({ env = 'test', cookieStr } = {}) {
+  const isProd = env === 'prod' || env === 'production';
+  return saveCookie({
+    jsonFileName: isProd ? 'luke_cookie.json' : 'test_luke_cookie.json',
+    cookieStr
+  });
+}
+
+export function loadLukeTestCookie() {
+  return loadLukeCookie({ env: 'test' });
+}
+
+export function saveLukeTestCookie(cookieStr) {
+  return saveLukeCookie({ env: 'test', cookieStr });
+}
+
+export function loadLukeProdCookie() {
+  return loadLukeCookie({ env: 'prod' });
+}
+
+export function saveLukeProdCookie(cookieStr) {
+  return saveLukeCookie({ env: 'prod', cookieStr });
+}
+
 /** Paoding Loki 容器日志 Cookie */
 export function loadPaodingCookie() {
   return loadCookie({

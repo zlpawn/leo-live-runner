@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、以及页面数据探索中枢、Dinsight 自然语言大数据探查。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查：自动复用 Chrome 登录态中的 prd-assistant-token-prod，直连 Agent 流式查数。 支持本地排查流程的保存、检索复用与更新，例如“记住这次排查方法”“按上次流程查”。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、页面数据探索中枢、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查，线上与删除操作强制执行 Pre-flight 预审与用户确认闭环。 支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -14,15 +14,16 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
 7. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
 8. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线。
+9. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员绑定）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
-> - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js` 与 `scripts/feci_deploy.js` 等）是 AI 专用的后台探查、交付与运维工具**。
-> - 用户只负责用自然语言表达排查、查配置、改测试配置、部署测试环境或提线上变更意图（如 *“帮我看下 500 报错”*、*“根据 traceId 画个时序图”*、*“查下 iot-platform 的 apollo 配置”*、*“把当前 master 分支构建部署到测试环境”*、*“把前端代码构建部署到测试”*、*“线上把 saas 超时改大”*）。
+> - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js`、`scripts/feci_deploy.js`、`scripts/luke_query.js` 与 `scripts/luke_modify.js` 等）是 AI 专用的后台探查、交付与运维工具**。
+> - 用户只负责用自然语言表达排查、查配置、改测试配置、部署测试环境、配置权限或提线上变更意图。
 > - **AI 必须在后台自动解析意图并主动执行对应脚本**：
->   - **查日志/查配置/查库**：AI 后台静默执行，提取关键日志、出入参、实时配置或调用链，交付结构化表格与结论。
+>   - **查日志/查配置/查库/查权限**：AI 后台静默执行，提取关键日志、出入参、实时配置、权限树或调用链，交付结构化表格与结论。
 >   - **测试环境 CI 构建与部署（全自动闭环）**：AI 后台自动识别当前 Git 仓库/服务与分支，触发构建并轮询镜像/产物出炉，自动下发测试环境负载部署并交付汇总报告；遇未配置服务自动动态发现并自学习缓存。
->   - **测试环境 Apollo 修改（两阶段风控原则）**：AI **必须先执行 Pre-flight（Dry-Run）**，向用户展示【变更前 vs 变更后】Diff 对比单，**等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
->   - **生产环境变更与部署（参谋原则，绝对禁止直写）**：AI **绝对禁止直接调用写接口修改线上配置或触发生产部署**！后台生成包含参数对比、风险评估的《线上变更建议单》，并附带官方生产发布/配置 Portal 直达链接，引导负责人在受控审批流中人工审核与发布。
+>   - **Apollo 与 Luke 权限修改（两阶段风控原则与线上高危拦截）**：AI **必须先执行 Pre-flight（Dry-Run）**，向用户展示【变更前 vs 变更后】Diff 对比单与受影响面评估，**尤其是线上生产环境 (`-e prod`) 或涉及删除角色、权限点、剔除 API 等高危操作，绝对禁止直接写入，必须在得到用户明确确认**后再追加 `--confirm` 执行发布并校验。
+>   - **生产环境配置变更与部署（参谋原则）**：针对 Apollo 与 CI 生产发布，AI 生成包含参数对比、风险评估的《线上变更建议单》，并附带官方生产发布/配置 Portal 直达链接，引导负责人在受控审批流中人工审核与发布。
 > - **切勿在回复中输出“请您手动在终端运行 node scripts/...”等推卸给用户的言论。**
 
 ---
@@ -91,6 +92,22 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **“往测试环境发一条工单流转测试消息”** | `node scripts/kafka_send.js -t 工单 --use-sample -s orderCode=T-TEST-001 -s status=已接单` | 自动利用 Sample 模板替换字段并投递至测试集群 |
 | **“往测试环境某个 topic 发送特定 JSON 消息”** | `node scripts/kafka_send.js -t <topic> -d '<json>'` | 写入测试 Broker 并回显 Partition 与 Offset |
 | **“扫描工程目录更新 Kafka 资产沉淀”** | `node scripts/kafka_scan.js -o resources/default_kafka.json` | 批量扫描四大主目录并更新内置资产库 |
+| **“查下测试环境 iot_auth 的约束列表”** | `node scripts/luke_query.js ext` | 列出当前系统的全部约束维度 (serviceId, apiUrl, requestMethod 等) |
+| **“查看 serviceId 约束包含哪些微服务”** | `node scripts/luke_query.js ext serviceId` | 查看指定约束的所有枚举微服务项 |
+| **“查下包含‘门锁’的权限点”** | `node scripts/luke_query.js perm -q 门锁` | 检索匹配的权限点列表及关联约束数 |
+| **“看下 anjia:lock:infoView 权限点挂载的接口与约束”** | `node scripts/luke_query.js perm anjia:lock:infoView` | 提取权限点关联的微服务、API 路径与 HTTP Method 候选集合 |
+| **“查看角色列表或超管角色的权限”** | `node scripts/luke_query.js role admin` | 角色基础属性与全量权限点/限定约束树 |
+| **“查看 admin 角色下绑定了哪些员工”** | `node scripts/luke_query.js users admin` | 提取该角色绑定的工号、姓名与有效期 |
+| **“在测试环境建一个新约束 myExt”** | `node scripts/luke_modify.js create-ext myExt 我的约束 Choice` | 直接创建全新约束字典项 |
+| **“往 serviceId 约束里追加一个微服务 my-new-svc”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/luke_modify.js update-ext serviceId --add-choice "my-new-svc:新服务"` | 展示枚举 Diff 对比单，**停下等待用户明确确认** |
+| **用户明确确认更新约束** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/luke_modify.js update-ext serviceId --confirm --add-choice "my-new-svc:新服务"` | 正式写入 GraphQL 并回查校验 |
+| **“新建一个设备重启权限点 iot:device:reboot”** | `node scripts/luke_modify.js create-perm iot:device:reboot 设备重启 --service zulin-iot-platform --api /api/v1/reboot --method POST` | 直接创建全新权限点并挂载关联约束 |
+| **“为权限点 anjia:lock:infoView 追加一个新 API”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/luke_modify.js update-perm anjia:lock:infoView --api "/api/v2/newLock"` | 输出 API 列表 Diff，**停下等待用户确认** |
+| **用户明确确认更新权限点** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/luke_modify.js update-perm anjia:lock:infoView --confirm --api "/api/v2/newLock"` | 正式提交更新并生效 |
+| **“新建一个业务角色 warehouse-manager”** | `node scripts/luke_modify.js create-role warehouse-manager 仓库经理 --desc "负责仓库运营"` | 直接创建全新角色 |
+| **“把权限点 anjia:storage:order 分配给库存管理员角色”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --api "/anjia/custom/api"` | 计算角色权限树 Diff 与受影响人员评估，**停下等待用户确认** |
+| **用户明确确认角色授权** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --confirm --api "/anjia/custom/api"` | 正式写入角色授权并生效 |
+| **“给员工张林 (30560224) 绑定库存管理员角色”** | `node scripts/luke_modify.js bind-role-user anjiah5:inventoryAdmin 1000000030560224` | 直接调用人员绑定接口 |
 
 ---
 
@@ -493,6 +510,135 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 ### 手动兜底
 
 设置 `LEO_INSPECTOR_BROWSER_CREDENTIALS=off` 可关闭自动获取，保留已有缓存和手动设置参数。不能安装插件时，可在浏览器开发者工具 Application → Cookies 复制目标凭据，或使用插件导出 Cookie，再调用业务脚本的 `--set-token` / `--set-cookie`。Shipwright 使用 `ci_deploy.js --set-shipwright-cookie`。不要在回复、日志或代码中记录凭据值。
+
+---
+
+## 🛡️ Luke 权限中心双环境治理 (Luke Permission Governance)
+
+本模块专为各大业务微服务（如 `iot_auth` 网关及业务子域）提供 **RBAC 鉴权与上下文约束自动化治理能力**。支持**双环境切换**：
+* 🧪 **测试环境**：`https://test-luke.ke.com`（默认，参数 `-e test`）
+* 🔴 **线上生产环境**：`https://luke.ke.com`（参数 `-e prod`）
+
+覆盖约束管理 (Ext)、权限点管理 (Perm)、角色管理 (Role) 与人员授权 (Users)。
+
+### 1. 严格的两阶段风控原则与线上/删除高危拦截机制
+
+为防止意外篡改权限体系、影响线上生产业务或引发级联鉴权故障，变更引擎执行严格的**两阶段风控闭环与高危操作阻断**：
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │ 用户提出权限配置/修改/删除需求           │
+                    │ (测试环境 -e test 或 线上生产 -e prod)   │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │ 阶段 1: AI 后台 Pre-flight 静态推演     │
+                    │ 探查当前线上/测试现状，计算精确 Diff     │
+                    │ 自动遍历级联影响的角色与受影响人员名单   │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │ 交付《高危操作/变更预审 Diff 报告》      │
+                    │ 🛑 强制停下，主动向用户汇报并等待明确确认│
+                    └────────────────────┬────────────────────┘
+                                         │
+                              用户明确输入 "确认" / "执行"
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │ 阶段 2: 带 --confirm 提交正式写接口     │
+                    │ 正式写入并立即发起回读校验               │
+                    └─────────────────────────────────────────┘
+```
+
+#### 🚨 触发高危预警与强制用户确认的场景：
+1. **线上生产环境的一切修改与操作 (`-e prod`)**：线上任何角色赋权、接口增删均直接影响真实员工与业务可用性，必须展示 Diff 并经用户明确确认。
+2. **任何环境下的删除/缩减操作**：
+   - 🔴 **删除角色** (`delete-role`)：直接影响该角色名下所有绑定的员工；
+   - 🔴 **删除权限点** (`delete-perm`)：级联影响所有包含此权限点的角色与相关人员；
+   - 🔴 **从权限点剔除接口/服务** (`update-perm --remove-api / --remove-service`)：会导致依赖该 API 的角色鉴权失败 (403)；
+   - 🔴 **从角色收回权限点或剔除接口** (`revoke-role-perm` / `grant-role-perm --remove-api`)；
+   - 🔴 **解绑人员** (`unbind-role-user`)。
+
+> ⚠️ **【高危铁律：绝对禁止未确认直写】**
+> 当遇到上述场景时，变更引擎会自动输出 `🚨🚨🚨【高危操作预审报告 (HIGH RISK DELETION)】🚨🚨🚨` 警示横幅与级联影响清单。
+> **AI 绝对禁止在未获得用户明确文字确认前擅自加上 `--confirm` 执行写入！** 必须向用户呈现完整报告并等待用户说“确认修改”或“确认删除”后才执行。
+
+---
+
+### 2. 常用操作命令速查 (双环境 `-e test` / `-e prod`)
+
+#### (1) 只读探查 (`scripts/luke_query.js`)
+```bash
+# 查询约束列表或指定约束的枚举值 (默认 test)
+node scripts/luke_query.js ext
+node scripts/luke_query.js ext serviceId
+
+# 查询线上生产环境中的约束
+node scripts/luke_query.js ext serviceId -e prod
+
+# 查询权限点详情与绑定的接口
+node scripts/luke_query.js perm anjia:storage:order:afterSaleOrder
+node scripts/luke_query.js perm anjia:storage:order:afterSaleOrder -e prod
+
+# 查询角色详情与权限树
+node scripts/luke_query.js role admin
+node scripts/luke_query.js role -q 看板管理员 -e prod
+
+# 查询角色名下绑定的真实员工列表
+node scripts/luke_query.js users admin
+node scripts/luke_query.js users admin -e prod
+```
+
+#### (2) 变更引擎 (`scripts/luke_modify.js`)
+
+```bash
+# ------------------------------
+# 1. 权限点接口维护 (增/删 API)
+# ------------------------------
+# 为权限点追加新 API (默认 Pre-flight 试运行)
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder --api "/anjia/afterSale/newApi"
+# 用户确认后正式执行
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder --confirm --api "/anjia/afterSale/newApi"
+
+# 🔴 高危：从权限点中剔除某个接口 (自动触发高危预警与影响面分析，严禁未确认直写)
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder --remove-api "/anjia/afterSale/oldApi"
+# 用户明确确认后带 --confirm 执行
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder --confirm --remove-api "/anjia/afterSale/oldApi"
+
+# 🔴 线上生产环境操作 (带 -e prod，先 Pre-flight 确认后再执行)
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder -e prod --api "/anjia/afterSale/newApi"
+node scripts/luke_modify.js update-perm anjia:storage:order:afterSaleOrder -e prod --confirm --api "/anjia/afterSale/newApi"
+
+# ------------------------------
+# 2. 角色维护与授权
+# ------------------------------
+# 新建角色
+node scripts/luke_modify.js create-role warehouse-op 仓储运维专员 --desc "日常仓储管理"
+
+# 🔴 高危：删除角色 (自动排查关联员工，需确认)
+node scripts/luke_modify.js delete-role warehouse-op
+node scripts/luke_modify.js delete-role warehouse-op --confirm
+
+# 为角色授权并限定约束值 (展示 Diff 与受影响员工)
+node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --api "/anjia/custom/api"
+node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --confirm --api "/anjia/custom/api"
+
+# 🔴 高危：从角色中剥离某个 API
+node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --remove-api "/anjia/custom/api"
+node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --confirm --remove-api "/anjia/custom/api"
+
+# ------------------------------
+# 3. 人员绑定与解绑
+# ------------------------------
+# 绑定人员到角色
+node scripts/luke_modify.js bind-role-user anjiah5:inventoryAdmin 1000000030560224
+# 🔴 高危：从角色中解绑人员
+node scripts/luke_modify.js unbind-role-user anjiah5:inventoryAdmin 1000000030560224
+node scripts/luke_modify.js unbind-role-user anjiah5:inventoryAdmin 1000000030560224 --confirm
+```
 
 ---
 

@@ -33,6 +33,8 @@ async function getMysql() {
   const candidates = [
     'mysql2/promise',
     path.join(__dirname, '..', 'node_modules', 'mysql2', 'promise.js'),
+    '/usr/lib/node_modules/mysql2/promise.js',
+    '/usr/local/lib/node_modules/mysql2/promise.js',
     path.join(process.cwd(), 'node_modules', 'mysql2', 'promise.js'),
     path.join(os.homedir(), '.agents', 'node_modules', 'mysql2', 'promise.js'),
     path.join(os.homedir(), 'project', 'AI', 'local-ai-gateway', 'node_modules', 'mysql2', 'promise.js')
