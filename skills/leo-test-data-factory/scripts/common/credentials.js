@@ -3,14 +3,13 @@ import path from 'node:path';
 import os from 'node:os';
 
 export const SEEDER_HOME = path.join(os.homedir(), '.shrimp', 'skills', 'test-data-factory');
-export const LEGACY_SEEDER_HOME = path.join(os.homedir(), '.shrimp', 'skills', 'test-data-seeder');
 export const CREDENTIAL_FILE = path.join(SEEDER_HOME, 'credentials.json');
 
 /**
  * 凭据解析优先级（高 → 低）：
  * 1. 环境变量 SEEDER_<SYSTEM>_PASSWORD（临时覆盖，适合切换环境）
  * 2. resources/systems.json 中的内置密码（开箱即用）
- * 3. 本地缓存 ~/.shrimp/skills/test-data-factory/credentials.json（兼容旧目录 test-data-seeder）
+ * 3. 本地缓存 ~/.shrimp/skills/test-data-factory/credentials.json
  * 4. 都没有则返回 null，由调用方给出引导
  *
  * 注：内置密码仅限内网测试环境，公网无法直连；如需换环境用环境变量覆盖即可。
@@ -38,14 +37,12 @@ export function loadPassword(systemName, systemsConfig = null) {
 }
 
 export function readCredentialFile() {
-  for (const file of [CREDENTIAL_FILE, path.join(LEGACY_SEEDER_HOME, 'credentials.json')]) {
-    try {
-      if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      // 继续尝试下一个位置
-    }
+  try {
+    if (!fs.existsSync(CREDENTIAL_FILE)) return null;
+    return JSON.parse(fs.readFileSync(CREDENTIAL_FILE, 'utf8'));
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**
