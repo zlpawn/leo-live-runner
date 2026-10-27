@@ -25,6 +25,11 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 >   - **Apollo 与 Luke 权限修改（两阶段风控原则与线上高危拦截）**：AI **必须先执行 Pre-flight（Dry-Run）**，向用户展示【变更前 vs 变更后】Diff 对比单与受影响面评估，**尤其是线上生产环境 (`-e prod`) 或涉及删除角色、权限点、剔除 API 等高危操作，绝对禁止直接写入，必须在得到用户明确确认**后再追加 `--confirm` 执行发布并校验。
 >   - **生产环境配置变更与部署（参谋原则）**：针对 Apollo 与 CI 生产发布，AI 生成包含参数对比、风险评估的《线上变更建议单》，并附带官方生产发布/配置 Portal 直达链接，引导负责人在受控审批流中人工审核与发布。
 > - **切勿在回复中输出“请您手动在终端运行 node scripts/...”等推卸给用户的言论。**
+> 
+> 🚨 **【核心鉴权铁律：零外部工具依赖，严禁使用 opencli / ego-browser / 外部自动化浏览器】**
+> - **自包含内生闭环**：本 Skill 拥有 100% 独立内生的凭据获取架构，所有登录态仅通过内部脚本与随附 Chrome 扩展（`Leo cookie.txt Locally`）在本地 `127.0.0.1:19528` 通信完成获取与自动落盘；
+> - **严禁调用任何外部浏览器驱动工具**：绝对禁止调用 `opencli`（如 `opencli browser ...`）、`ego-browser`、`puppeteer`、`playwright` 等工具去操作或驱动浏览器获取登录态！外部工具具有强侵入性、易触发公司 SSO 风控拦截且破坏用户正常办公体验；
+> - **极简操作流程**：任何涉及凭据获取的场景，AI 直接运行对应的业务脚本即可（底层自动触发 `credential_relay` 会话并完成中继），或在需要单点校验连通性时运行 `node scripts/credential_relay.js <targetUrl>`；若扩展超时或未登录，只需温和提示用户在日常 Chrome 中登录目标网站后重试。
 
 ---
 
@@ -501,11 +506,23 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 | Shipwright | 独立获取和缓存，不复用服务云整串 Cookie |
 | FeCI | 独立获取适用于 `feci-next.ke.com` 的 Cookie |
 | Apollo 测试 Portal | 适用于 Portal 的 Cookie（包括 `jt_apollo_login_token`） |
+| Luke 权限中心 (测试/线上) | 适用于 `luke.ke.com` / `test-luke.ke.com` 的鉴权 Cookie（包括 `luke-token`、`login_ucid` 等） |
 | Dinsight | 上述 5 个 Key，按实际认证 API URL 获取 |
 | Paoding 测试日志 | 匿名优先；明确鉴权失败后尝试缓存及浏览器 |
 | FAST / Apollo ConfigService | 沿用现有访问流程，不新增强制凭据要求 |
 
 第一版仅支持浏览器 Cookie，包括 HttpOnly Cookie 和存于 Cookie 中的 Token；不读取 localStorage、sessionStorage 或请求头 Token。仅支持同机单个普通 Profile，不支持隐身、分区 Cookie 或远程浏览器。信任本机程序，无配对密钥；端口被其他进程占用时返回 `RELAY_BUSY`，稍后重试。
+
+### 独立中继工具 (`scripts/credential_relay.js`)
+
+若需要单点排查、测试或显式同步某个站点的 Cookie，可直接运行 Skill 自带的原生中继工具（**严禁调用 opencli / ego-browser 等外部浏览器驱动工具**）：
+```bash
+# 验证并同步 Luke 线上权限中心凭据
+node scripts/credential_relay.js https://luke.ke.com
+
+# 验证并同步服务云凭据 (JSON 格式)
+node scripts/credential_relay.js https://cloud.intra.ke.com --json
+```
 
 ### 手动兜底
 

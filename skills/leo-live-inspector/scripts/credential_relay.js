@@ -140,3 +140,77 @@ function receiveCookies(request, deadline, signal) {
     server.listen(PORT, '127.0.0.1');
   });
 }
+
+// ---------------- CLI Entrypoint ----------------
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const args = process.argv.slice(2);
+  if (args.includes('-h') || args.includes('--help') || args.length === 0) {
+    console.log(`
+🔌 Leo Live Inspector - 凭据中继直连同步工具 (Credential Relay CLI)
+
+无需借助任何外部浏览器自动化工具（如 opencli / ego-browser），通过随附 Chrome 扩展自动同步 Cookie！
+
+用法:
+  node scripts/credential_relay.js <targetUrl> [options]
+
+参数:
+  <targetUrl>            目标系统 URL (例如: https://luke.ke.com 或 https://cloud.intra.ke.com)
+
+选项:
+  --names <k1,k2...>     仅提取指定的 Cookie 名称 (逗号分隔)
+  --timeout <ms>         等待扩展轮询超时时间 (默认: 60000ms)
+  --json                 以 JSON 格式输出抓取到的 Cookies
+  -h, --help             查看帮助
+
+示例:
+  node scripts/credential_relay.js https://luke.ke.com
+  node scripts/credential_relay.js https://cloud.intra.ke.com --json
+`);
+    process.exit(args.length === 0 ? 1 : 0);
+  }
+
+  const url = args[0];
+  let names = undefined;
+  let timeoutMs = 60000;
+  let isJson = false;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--names' && args[i + 1]) {
+      names = args[++i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (args[i] === '--timeout' && args[i + 1]) {
+      timeoutMs = parseInt(args[++i], 10) || 60000;
+    } else if (args[i] === '--json') {
+      isJson = true;
+    }
+  }
+
+  console.log(`⏳ 正在通过本地端口 ${PORT} 等待 Chrome 扩展 (Leo cookie.txt Locally) 静默同步凭据...`);
+  console.log(`🎯 目标 URL: ${url}`);
+  console.log(`💡 提示: 请确保已在常驻 Chrome 浏览器中登录该目标站点，扩展将在 1 分钟内自动回传。\n`);
+
+  getBrowserCookies({ url, names, timeoutMs })
+    .then(cookies => {
+      const header = cookiesToHeader(cookies);
+      if (isJson) {
+        console.log(JSON.stringify({ ok: true, count: cookies.length, cookies, header }, null, 2));
+      } else {
+        console.log(`✅ 凭据同步成功！共获取 ${cookies.length} 个 Cookie:`);
+        console.table(cookies.map(c => ({
+          名称: c.name,
+          域名: c.domain,
+          路径: c.path,
+          安全: c.secure,
+          到期时间: c.expirationDate ? new Date(c.expirationDate * 1000).toLocaleString() : 'Session'
+        })));
+        console.log(`📋 Cookie 标头长度: ${header.length} 字符\n`);
+      }
+    })
+    .catch(err => {
+      console.error(`❌ 凭据同步失败:`, err.message);
+      process.exit(1);
+    });
+}
+

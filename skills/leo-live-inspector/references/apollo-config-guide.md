@@ -153,7 +153,7 @@ node scripts/apollo_query.js zulin-iot-platform lockAuth --json
 3. **凭证管理与自愈**：
    - 核心 Cookie：`jt_apollo_login_token`（作用域 `test-apollo.portal.life.ke.com`）；
    - 自动读取 `~/.shrimp/skills/live-inspector/test_apollo_cookie.json`；
-   - 失效时指引用户使用 Chrome 扩展 **Leo cookie.txt Locally** 复制 `jt_apollo_login_token`。严禁引导安装 `ego-browser`。
+   - 凭据缺失或失效时通过本地扩展中继自动获取，或指引用户使用 Chrome 扩展 **Leo cookie.txt Locally** 复制 `jt_apollo_login_token`。严禁引导安装 `ego-browser` 或调用 `opencli` 等外部浏览器自动化工具。
 
 ---
 
