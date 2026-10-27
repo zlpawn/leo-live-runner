@@ -1,0 +1,101 @@
+{
+  "_comment": "测试环境连接配置（内置，开箱即用）。密码可直接用；如需临时覆盖，设置环境变量 SEEDER_<SYSTEM>_PASSWORD 优先级更高。",
+  "systems": {
+    "iot-platform": {
+      "displayName": "IOT 平台主库",
+      "type": "mysql",
+      "datasources": {
+        "default": {
+          "database": "iot_plat",
+          "host": "m10155.mars.test.mysql.ljnode.com",
+          "port": 10155,
+          "user": "root",
+          "password": "14bAfAF93a"
+        }
+      }
+    },
+    "manager-workbench": {
+      "displayName": "租务管家工作台（任务处理人）",
+      "type": "mysql",
+      "datasources": {
+        "default": {
+          "database": "manager_workbench",
+          "host": "m11848.mars.test.mysql.ljnode.com",
+          "port": 11848,
+          "user": "root",
+          "password": "hLFHXD2p4dg99M4S"
+        }
+      }
+    },
+    "trusteeship-contract": {
+      "displayName": "租务合同中心",
+      "type": "mysql",
+      "datasources": {
+        "default": {
+          "database": "trusteeship_contract",
+          "host": "m10038.mars.test.mysql.ljnode.com",
+          "port": 10038,
+          "user": "root",
+          "password": "b0C123a6fd"
+        }
+      }
+    },
+    "sun-core": {
+      "displayName": "权益中心（权益包/模板/适用范围）",
+      "type": "mysql",
+      "datasources": {
+        "default": {
+          "database": "sun_core",
+          "host": "m10038.mars.test.mysql.ljnode.com",
+          "port": 10038,
+          "user": "root",
+          "password": "b0C123a6fd"
+        }
+      }
+    },
+    "beijia-commodity": {
+      "displayName": "贝家商品中心",
+      "type": "mysql",
+      "datasources": {
+        "default": {
+          "database": "beijia_commodity",
+          "host": "m10038.mars.test.mysql.ljnode.com",
+          "port": 10038,
+          "user": "root",
+          "password": "b0C123a6fd"
+        }
+      }
+    },
+    "iot-redis": {
+      "displayName": "IOT 测试环境 Redis",
+      "type": "redis",
+      "host": "m11788.mars.test.redis.ljnode.com",
+      "port": 11788,
+      "password": "QKdZCR2p89AO5O8I"
+    }
+  },
+  "httpServices": {
+    "beijia-trade-access": {
+      "displayName": "家服交易接入（创建/取消订单）",
+      "baseUrl": "http://test.beijia-trade-access.ke.com"
+    }
+  },
+  "kafka": {
+    "test": {
+      "brokers": [
+        "kafka08-test.mars.ljnode.com:9092",
+        "kafka09-test.mars.ljnode.com:9092",
+        "kafka10-test.mars.ljnode.com:9092"
+      ]
+    },
+    "test-contract": {
+      "brokers": ["kafka01-test.lianjia.com:9092"]
+    }
+  },
+  "apollo": {
+    "test": {
+      "configService": "http://test.config.apollo.ke.com",
+      "appId": "zulin-iot-platform"
+    }
+  }
+}
