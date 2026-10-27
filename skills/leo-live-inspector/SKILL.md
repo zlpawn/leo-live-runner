@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、页面数据探索中枢、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈，以及后台页面点击探查；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查，线上与删除操作强制执行 Pre-flight 预审与用户确认闭环。 支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查，线上与删除操作强制执行 Pre-flight 预审与用户确认闭环。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -11,10 +11,9 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 3. **⚙️ Apollo 配置中心线上线下双轨体系（探查、修改与变更参谋）**：直连 Apollo ConfigService 秒级读取全量实时配置；【测试环境】支持热修改发布与两阶段 Diff 确认闭环；【生产环境】坚守“零直写原则”，自动进入变更参谋模式，生成高可读性《线上变更建议单》与 Portal 官方直达链接；
 4. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
-6. **🌐 后台页面点击与数据探查（扩展能力）**：支持借助浏览器自动化/扩展能力在后台管理系统、运维看板中通过页面点击和元素审查提取业务数据。
-7. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析。
-8. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线。
-9. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员绑定）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
+6. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析；
+7. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线；
+8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员绑定）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js`、`scripts/feci_deploy.js`、`scripts/luke_query.js` 与 `scripts/luke_modify.js` 等）是 AI 专用的后台探查、交付与运维工具**。
@@ -130,7 +129,7 @@ flowchart TD
     B -->|"查线上生产数据库"| C4["后台执行 scripts/cloud_mysql_query.js (appId, sql)"]
     B -->|"查线下/测试数据库"| C5["后台执行 scripts/test_mysql_query.js (appId, [ds], sql)"]
     B -->|"问 Dinsight 查大数据"| C9["后台执行 scripts/dinsight_query.js (自然语言问题)"]
-    B -->|"后台页面点击探查"| C6["通过 Chrome 扩展探针访问后台页面检索"]
+    B -->|"查/改 Luke 权限中心"| C10["后台执行 scripts/luke_query.js 或 luke_modify.js"]
 
     C1 --> D1["提取 URI, 状态码, 耗时, 错误堆栈"]
     C2 --> D2["按时间正序排列，自动绘制 Mermaid 时序图"]
@@ -141,9 +140,9 @@ flowchart TD
     D8 --> E8["引导负责人在官方 Portal 亲自走合规审批与发布 (零越权、零资损)"]
     C4 & C5 --> D4["格式化 Markdown 数据表格，标注耗时与行数"]
     C9 --> D9["提取 Dinsight 回答、SQL/指标工具与错误摘要"]
-    C6 --> D5["解析页面 DOM / Network 返回数据"]
+    C10 --> D10["输出权限树/人员列表；改动展示 Diff，高危操作强制经确认后 --confirm 提交"]
 
-    D1 & D2 & D3 & D4 & D5 & D9 & E7 & E8 --> E["向用户交付高可读性诊断报告与结论"]
+    D1 & D2 & D3 & D4 & D9 & D10 & E7 & E8 --> E["向用户交付高可读性诊断报告与结论"]
     E -.-> F["💡 若需免发版订正脏数据，主动引导唤起 leo-live-runner"]
     E --> G{"本次是否形成可复用且已验证的新方法或判断分支？"}
     G -->|否| Z["结束，不询问沉淀"]
@@ -663,6 +662,7 @@ node scripts/luke_modify.js unbind-role-user anjiah5:inventoryAdmin 100000003056
 
 - **Apollo 配置探查协议与实战手册**：[references/apollo-config-guide.md](references/apollo-config-guide.md)
 - **FAST 日志协议与检索自愈机制**：[references/fast-log-guide.md](references/fast-log-guide.md)
-- **后台页面点击与数据探查指南**：[references/page-inspect-guide.md](references/page-inspect-guide.md)
+- **CI 构建与测试环境部署手册**：[references/ci-deploy-guide.md](references/ci-deploy-guide.md)
 - **Dinsight 自然语言查数协议**：[references/dinsight-query-guide.md](references/dinsight-query-guide.md)
+- **本地排查流程知识库操作手册**：[references/local-knowledge-guide.md](references/local-knowledge-guide.md)
 - **Trace 全链路时序排障实战**：[examples/100_trace_and_log_query.md](examples/100_trace_and_log_query.md)
