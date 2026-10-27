@@ -1,4 +1,4 @@
-# leo-test-data-seeder
+# leo-test-data-factory
 
 测试环境数据构造与业务流程编排 skill。面向研发自测与 QA 测试。
 
@@ -7,7 +7,7 @@
 ### 1. 安装依赖
 
 ```bash
-cd skills/leo-test-data-seeder
+cd skills/leo-test-data-factory
 npm install
 ```
 

@@ -1,5 +1,5 @@
 {
-  "name": "leo-test-data-seeder",
+  "name": "leo-test-data-factory",
   "version": "0.1.0",
   "description": "Leo 测试环境数据构造与业务流程编排 skill",
   "type": "module",
