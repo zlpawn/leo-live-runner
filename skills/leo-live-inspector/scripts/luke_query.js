@@ -475,12 +475,19 @@ async function main() {
 
           if (filteredConstraintDiffs.length > 0) {
             console.log(`\n📐 数据约束差异明细 (Tier 3 下探):`);
+            const labelA = (res.userA?.name && res.userA?.name === res.userB?.name)
+              ? `${res.userA.name} (${res.userA.ucid || 'A'}) 范围`
+              : `${res.userA?.name || nameA} 范围`;
+            const labelB = (res.userA?.name && res.userA?.name === res.userB?.name)
+              ? `${res.userB.name} (${res.userB.ucid || 'B'}) 范围`
+              : `${res.userB?.name || nameB} 范围`;
+
             console.table(filteredConstraintDiffs.map(d => ({
               '权限点 Code': d.permId,
               '权限点名称': d.permName,
               '约束字段': d.extName || d.extId,
-              [`${res.userA?.name || nameA} 范围`]: (d.scopeA && d.scopeA.length > 0) ? d.scopeA.join(', ') : '无',
-              [`${res.userB?.name || nameB} 范围`]: (d.scopeB && d.scopeB.length > 0) ? d.scopeB.join(', ') : '无',
+              [labelA]: (d.scopeA && d.scopeA.length > 0) ? d.scopeA.join(', ') : '无',
+              [labelB]: (d.scopeB && d.scopeB.length > 0) ? d.scopeB.join(', ') : '无',
               '差异说明': d.explanation
             })));
           }
