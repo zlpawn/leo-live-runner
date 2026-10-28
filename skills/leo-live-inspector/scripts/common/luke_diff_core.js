@@ -214,7 +214,7 @@ export function aggregateEffectivePermissions(user, userRoles = [], allRolesMap 
     }
 
     // 用户与角色绑定过期判定
-    const userExpireDate = userRole.userExpireDate;
+    const userExpireDate = userRole.userExpireDate || userRole.userBindingExpireDate;
     if (userExpireDate) {
       const bindingTime = new Date(userExpireDate).getTime();
       if (!Number.isNaN(bindingTime) && bindingTime <= now) {
@@ -307,10 +307,11 @@ export function aggregateEffectivePermissions(user, userRoles = [], allRolesMap 
     });
   }
 
+  const u = user || {};
   return {
     user: {
-      ucid: String(user.ucid || ''),
-      name: user.name || ''
+      ucid: String(u.ucid || ''),
+      name: u.name || ''
     },
     appId,
     env,
