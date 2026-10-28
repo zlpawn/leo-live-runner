@@ -489,10 +489,11 @@ export async function deleteRoleUsers(appId = DEFAULT_APP_ID, roleId, ucids = []
  * @returns {Promise<Array>} 排干后的所有节点列表
  */
 export async function drainPages(fetchPageFn, pageSize = 100) {
+  const safePageSize = Math.max(1, parseInt(pageSize, 10) || 100);
   const firstPage = await fetchPageFn(1);
   const nodes = [...(firstPage?.nodes || [])];
   const total = Number.isFinite(firstPage?.total) ? firstPage.total : nodes.length;
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = Math.ceil(total / safePageSize);
 
   for (let page = 2; page <= totalPages; page++) {
     const pageResult = await fetchPageFn(page);
@@ -519,11 +520,12 @@ export async function fetchAppRolesWithUsers(appId = DEFAULT_APP_ID, {
 } = {}) {
   const doListRoles = customListRoles || listRoles;
   const doListRoleUsers = customListRoleUsers || listRoleUsers;
+  const safePageSize = Math.max(1, parseInt(pageSize, 10) || 100);
 
   // 1. 分页排干获取全量角色 (allRoles)
   const allRoles = await drainPages(
-    page => doListRoles(appId, { pager: { pageSize, current: page }, cookie, env }),
-    pageSize
+    page => doListRoles(appId, { pager: { pageSize: safePageSize, current: page }, cookie, env }),
+    safePageSize
   );
 
   // 2. 并发分批拉取所有角色的人员绑定 (allRoleUsers)
@@ -533,15 +535,18 @@ export async function fetchAppRolesWithUsers(appId = DEFAULT_APP_ID, {
   for (let i = 0; i < allRoles.length; i += effectiveBatchSize) {
     const chunk = allRoles.slice(i, i + effectiveBatchSize);
     const chunkResults = await Promise.all(
-      chunk.map(role =>
-        drainPages(
-          page => doListRoleUsers(appId, role.id, { pager: { pageSize, current: page }, cookie, env }),
-          pageSize
-        )
-      )
+      chunk.map(role => {
+        if (!role || !role.id) return Promise.resolve([]);
+        return drainPages(
+          page => doListRoleUsers(appId, role.id, { pager: { pageSize: safePageSize, current: page }, cookie, env }),
+          safePageSize
+        );
+      })
     );
     chunk.forEach((role, idx) => {
-      roleUsersMap[role.id] = chunkResults[idx] || [];
+      if (role && role.id) {
+        roleUsersMap[role.id] = chunkResults[idx] || [];
+      }
     });
   }
 
