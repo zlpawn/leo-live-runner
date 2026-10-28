@@ -1,6 +1,21 @@
 import { requestHttp } from './http.js';
 import { loadLukeCookie, saveLukeCookie } from './credentials.js';
 import { createCredentialSession, isLoginFailure } from './browser_credentials.js';
+import {
+  buildUserMemoryIndex,
+  resolveUserFromIndex,
+  aggregateEffectivePermissions,
+  diffUserProfiles
+} from './luke_diff_core.js';
+
+export {
+  EXT_NAMES,
+  generatePortalUrl,
+  buildUserMemoryIndex,
+  resolveUserFromIndex,
+  aggregateEffectivePermissions,
+  diffUserProfiles
+} from './luke_diff_core.js';
 
 export const LUKE_HOSTS = {
   test: 'test-luke.ke.com',
@@ -337,6 +352,13 @@ export async function listRoles(appId = DEFAULT_APP_ID, { filter = null, pager =
           childRoleNums
           updateDate
           expireDate
+          perms {
+            permId
+            exts {
+              extId
+              value
+            }
+          }
         }
       }
     }
@@ -457,3 +479,164 @@ export async function deleteRoleUsers(appId = DEFAULT_APP_ID, roleId, ucids = []
   const data = await executeLukeGraphQL({ appId, query, variables: { roleId, ucids }, cookie, env });
   return data.deleteRoleUsers;
 }
+
+// ==================== 人员画像与双人 Diff 网络编排层 ====================
+
+/**
+ * 分页排干执行器 (Page Draining Helper)
+ * @param {Function} fetchPageFn - (page: number) => Promise<{ total: number, nodes: Array }>
+ * @param {number} [pageSize=100] - 每页大小
+ * @returns {Promise<Array>} 排干后的所有节点列表
+ */
+export async function drainPages(fetchPageFn, pageSize = 100) {
+  const firstPage = await fetchPageFn(1);
+  const nodes = [...(firstPage?.nodes || [])];
+  const total = Number.isFinite(firstPage?.total) ? firstPage.total : nodes.length;
+  const totalPages = Math.ceil(total / pageSize);
+
+  for (let page = 2; page <= totalPages; page++) {
+    const pageResult = await fetchPageFn(page);
+    if (pageResult && Array.isArray(pageResult.nodes)) {
+      nodes.push(...pageResult.nodes);
+    }
+  }
+  return nodes;
+}
+
+/**
+ * 跨角色与人员全量数据并发拉取与分页排干编排器
+ * @param {string} [appId=DEFAULT_APP_ID] 目标应用标识
+ * @param {Object} [options={}] 参数选项 (cookie, env, batchSize, pageSize)
+ * @returns {Promise<{ allRoles: Array, roleUsersMap: Object }>}
+ */
+export async function fetchAppRolesWithUsers(appId = DEFAULT_APP_ID, {
+  cookie,
+  env = 'test',
+  batchSize = 6,
+  pageSize = 100,
+  listRoles: customListRoles,
+  listRoleUsers: customListRoleUsers
+} = {}) {
+  const doListRoles = customListRoles || listRoles;
+  const doListRoleUsers = customListRoleUsers || listRoleUsers;
+
+  // 1. 分页排干获取全量角色 (allRoles)
+  const allRoles = await drainPages(
+    page => doListRoles(appId, { pager: { pageSize, current: page }, cookie, env }),
+    pageSize
+  );
+
+  // 2. 并发分批拉取所有角色的人员绑定 (allRoleUsers)
+  const roleUsersMap = {};
+  const effectiveBatchSize = Math.max(1, parseInt(batchSize, 10) || 6);
+
+  for (let i = 0; i < allRoles.length; i += effectiveBatchSize) {
+    const chunk = allRoles.slice(i, i + effectiveBatchSize);
+    const chunkResults = await Promise.all(
+      chunk.map(role =>
+        drainPages(
+          page => doListRoleUsers(appId, role.id, { pager: { pageSize, current: page }, cookie, env }),
+          pageSize
+        )
+      )
+    );
+    chunk.forEach((role, idx) => {
+      roleUsersMap[role.id] = chunkResults[idx] || [];
+    });
+  }
+
+  return { allRoles, roleUsersMap };
+}
+
+/**
+ * 查询指定员工在目标应用下的生效权限画像 (自动消歧与多角色约束并集合并)
+ * @param {string} [appId=DEFAULT_APP_ID] 应用标识
+ * @param {string} identifier 工号（UCID）或姓名
+ * @param {Object} [options={}] 包含 cookie, env, batchSize 等
+ * @returns {Promise<Object>}
+ */
+export async function getUserPermissions(appId = DEFAULT_APP_ID, identifier, options = {}) {
+  const { cookie, env = 'test', batchSize = 6 } = options;
+  const { allRoles, roleUsersMap } = await fetchAppRolesWithUsers(appId, {
+    cookie,
+    env,
+    batchSize,
+    ...options
+  });
+
+  const index = buildUserMemoryIndex(allRoles, roleUsersMap);
+  const resolved = resolveUserFromIndex(identifier, index);
+
+  if (resolved.ambiguous || resolved.notFound) {
+    return resolved;
+  }
+
+  const profile = aggregateEffectivePermissions(resolved.user, resolved.roles, allRoles, { appId, env });
+  return {
+    matched: true,
+    ...profile
+  };
+}
+
+/**
+ * 对比两名员工在目标应用下的权限画像 (三层深度 Diff 与同名消歧保护)
+ * @param {string} [appId=DEFAULT_APP_ID] 应用标识
+ * @param {string} userA 员工 A 标识 (工号或姓名)
+ * @param {string} userB 员工 B 标识 (工号或姓名)
+ * @param {Object} [options={}] 包含 cookie, env, batchSize 等
+ * @returns {Promise<Object>}
+ */
+export async function compareUserPermissions(appId = DEFAULT_APP_ID, userA, userB, options = {}) {
+  const { cookie, env = 'test', batchSize = 6 } = options;
+  const { allRoles, roleUsersMap } = await fetchAppRolesWithUsers(appId, {
+    cookie,
+    env,
+    batchSize,
+    ...options
+  });
+
+  const index = buildUserMemoryIndex(allRoles, roleUsersMap);
+  const resA = resolveUserFromIndex(userA, index);
+  const resB = resolveUserFromIndex(userB, index);
+
+  if (resA.ambiguous) {
+    return {
+      ambiguous: true,
+      target: 'userA',
+      query: userA,
+      candidates: resA.candidates
+    };
+  }
+  if (resB.ambiguous) {
+    return {
+      ambiguous: true,
+      target: 'userB',
+      query: userB,
+      candidates: resB.candidates
+    };
+  }
+  if (resA.notFound) {
+    return {
+      notFound: true,
+      target: 'userA',
+      identifier: userA
+    };
+  }
+  if (resB.notFound) {
+    return {
+      notFound: true,
+      target: 'userB',
+      identifier: userB
+    };
+  }
+
+  const profileA = aggregateEffectivePermissions(resA.user, resA.roles, allRoles, { appId, env });
+  const profileB = aggregateEffectivePermissions(resB.user, resB.roles, allRoles, { appId, env });
+
+  const diff = diffUserProfiles(profileA, profileB, { appId, env });
+  return {
+    matched: true,
+    ...diff
+  };
+}
+

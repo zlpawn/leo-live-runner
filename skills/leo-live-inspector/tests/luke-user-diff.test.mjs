@@ -5,8 +5,21 @@ import {
   resolveUserFromIndex,
   aggregateEffectivePermissions,
   diffUserProfiles,
-  generatePortalUrl
+  generatePortalUrl,
+  EXT_NAMES
 } from '../scripts/common/luke_diff_core.js';
+import {
+  EXT_NAMES as LUKE_EXT_NAMES,
+  generatePortalUrl as lukeGeneratePortalUrl,
+  buildUserMemoryIndex as lukeBuildUserMemoryIndex,
+  resolveUserFromIndex as lukeResolveUserFromIndex,
+  aggregateEffectivePermissions as lukeAggregateEffectivePermissions,
+  diffUserProfiles as lukeDiffUserProfiles,
+  drainPages,
+  fetchAppRolesWithUsers,
+  getUserPermissions,
+  compareUserPermissions
+} from '../scripts/common/luke.js';
 
 const mockRoles = [
   {
@@ -323,4 +336,179 @@ test('aggregateEffectivePermissions - accepts array and plain object for allRole
   assert.equal(profileFromObj.roles.length, 1);
   assert.equal(profileFromObj.perms.length, 2);
 });
+
+test('luke.js re-exports all pure calculation functions from luke_diff_core.js', () => {
+  assert.equal(typeof LUKE_EXT_NAMES, 'object');
+  assert.equal(LUKE_EXT_NAMES.cityCode, EXT_NAMES.cityCode);
+  assert.equal(lukeGeneratePortalUrl, generatePortalUrl);
+  assert.equal(lukeBuildUserMemoryIndex, buildUserMemoryIndex);
+  assert.equal(lukeResolveUserFromIndex, resolveUserFromIndex);
+  assert.equal(lukeAggregateEffectivePermissions, aggregateEffectivePermissions);
+  assert.equal(lukeDiffUserProfiles, diffUserProfiles);
+});
+
+test('luke.js exports network orchestrator functions', () => {
+  assert.equal(typeof drainPages, 'function');
+  assert.equal(typeof fetchAppRolesWithUsers, 'function');
+  assert.equal(typeof getUserPermissions, 'function');
+  assert.equal(typeof compareUserPermissions, 'function');
+});
+
+test('drainPages - drains multiple pages accurately with pagination helper', async () => {
+  const calls = [];
+  const mockFetch = async (page) => {
+    calls.push(page);
+    if (page === 1) return { total: 25, nodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
+    if (page === 2) return { total: 25, nodes: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20] };
+    return { total: 25, nodes: [21, 22, 23, 24, 25] };
+  };
+
+  const all = await drainPages(mockFetch, 10);
+  assert.deepEqual(calls, [1, 2, 3]);
+  assert.equal(all.length, 25);
+  assert.deepEqual(all, Array.from({ length: 25 }, (_, i) => i + 1));
+
+  // Single page: only calls page 1
+  const callsSingle = [];
+  const mockFetchSingle = async (page) => {
+    callsSingle.push(page);
+    return { total: 3, nodes: ['a', 'b', 'c'] };
+  };
+  const allSingle = await drainPages(mockFetchSingle, 10);
+  assert.deepEqual(callsSingle, [1]);
+  assert.deepEqual(allSingle, ['a', 'b', 'c']);
+
+  // Empty page: returns empty array
+  const allEmpty = await drainPages(async () => ({ total: 0, nodes: [] }), 10);
+  assert.deepEqual(allEmpty, []);
+});
+
+test('fetchAppRolesWithUsers - page draining and batch concurrency', async () => {
+  const mockRoleList = Array.from({ length: 15 }, (_, i) => ({
+    id: `role_${i + 1}`,
+    name: `Role ${i + 1}`,
+    active: true,
+    perms: []
+  }));
+
+  const mockListRoles = async (appId, { pager }) => {
+    const { pageSize, current } = pager;
+    const start = (current - 1) * pageSize;
+    return {
+      total: mockRoleList.length,
+      nodes: mockRoleList.slice(start, start + pageSize)
+    };
+  };
+
+  const mockListRoleUsers = async (appId, roleId, { pager }) => {
+    return {
+      total: 1,
+      nodes: [{ ucid: `user_${roleId}`, user: { name: `User ${roleId}` } }]
+    };
+  };
+
+  const { allRoles, roleUsersMap } = await fetchAppRolesWithUsers('test_app', {
+    pageSize: 10,
+    batchSize: 4,
+    listRoles: mockListRoles,
+    listRoleUsers: mockListRoleUsers
+  });
+
+  assert.equal(allRoles.length, 15);
+  assert.equal(Object.keys(roleUsersMap).length, 15);
+  assert.equal(roleUsersMap['role_1'][0].ucid, 'user_role_1');
+  assert.equal(roleUsersMap['role_15'][0].ucid, 'user_role_15');
+});
+
+test('getUserPermissions - matched, ambiguous, and notFound handling', async () => {
+  const mockListRoles = async () => ({
+    total: mockRoles.length,
+    nodes: mockRoles
+  });
+  const mockListRoleUsers = async (appId, roleId) => ({
+    total: (mockRoleUsersMap[roleId] || []).length,
+    nodes: mockRoleUsersMap[roleId] || []
+  });
+
+  const options = {
+    listRoles: mockListRoles,
+    listRoleUsers: mockListRoleUsers
+  };
+
+  // 1. Matched by UCID
+  const resUcid = await getUserPermissions('iot_auth', '1001', options);
+  assert.equal(resUcid.matched, true);
+  assert.equal(resUcid.user.ucid, '1001');
+  assert.equal(resUcid.user.name, '张林');
+  assert.equal(resUcid.roles.length, 2);
+  assert.equal(resUcid.perms.length, 2);
+
+  // 2. Matched by unique name
+  const resName = await getUserPermissions('iot_auth', '李四', options);
+  assert.equal(resName.matched, true);
+  assert.equal(resName.user.ucid, '1002');
+
+  // 3. Ambiguous name
+  const resAmb = await getUserPermissions('iot_auth', '王五', options);
+  assert.equal(resAmb.ambiguous, true);
+  assert.equal(resAmb.query, '王五');
+  assert.equal(resAmb.candidates.length, 2);
+
+  // 4. Not found
+  const resNotFound = await getUserPermissions('iot_auth', 'nobody', options);
+  assert.equal(resNotFound.notFound, true);
+  assert.equal(resNotFound.identifier, 'nobody');
+});
+
+test('compareUserPermissions - matched diff, ambiguous and notFound handling', async () => {
+  const mockListRoles = async () => ({
+    total: mockRoles.length,
+    nodes: mockRoles
+  });
+  const mockListRoleUsers = async (appId, roleId) => ({
+    total: (mockRoleUsersMap[roleId] || []).length,
+    nodes: mockRoleUsersMap[roleId] || []
+  });
+
+  const options = {
+    listRoles: mockListRoles,
+    listRoleUsers: mockListRoleUsers
+  };
+
+  // 1. Matched diff
+  const diffRes = await compareUserPermissions('iot_auth', '1001', '1002', options);
+  assert.equal(diffRes.matched, true);
+  assert.equal(diffRes.summary.isIdentical, false);
+  assert.equal(diffRes.rolesDiff.onlyA.length, 1);
+  assert.equal(diffRes.rolesDiff.onlyB.length, 1);
+  assert.equal(diffRes.rolesDiff.both.length, 1);
+  assert.equal(diffRes.permsDiff.both.length, 1);
+
+  // 2. userA ambiguous
+  const diffAmbA = await compareUserPermissions('iot_auth', '王五', '1001', options);
+  assert.equal(diffAmbA.ambiguous, true);
+  assert.equal(diffAmbA.target, 'userA');
+  assert.equal(diffAmbA.query, '王五');
+  assert.equal(diffAmbA.candidates.length, 2);
+
+  // 3. userB ambiguous
+  const diffAmbB = await compareUserPermissions('iot_auth', '1001', '王五', options);
+  assert.equal(diffAmbB.ambiguous, true);
+  assert.equal(diffAmbB.target, 'userB');
+  assert.equal(diffAmbB.query, '王五');
+  assert.equal(diffAmbB.candidates.length, 2);
+
+  // 4. userA notFound
+  const diffNotFoundA = await compareUserPermissions('iot_auth', 'unknownA', '1001', options);
+  assert.equal(diffNotFoundA.notFound, true);
+  assert.equal(diffNotFoundA.target, 'userA');
+  assert.equal(diffNotFoundA.identifier, 'unknownA');
+
+  // 5. userB notFound
+  const diffNotFoundB = await compareUserPermissions('iot_auth', '1001', 'unknownB', options);
+  assert.equal(diffNotFoundB.notFound, true);
+  assert.equal(diffNotFoundB.target, 'userB');
+  assert.equal(diffNotFoundB.identifier, 'unknownB');
+});
+
 
