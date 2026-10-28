@@ -2,7 +2,7 @@
 
 - **日期**：2026-10-28
 - **目标组件**：`skills/leo-live-inspector`
-- **状态**：已完成设计对齐，待进入实现阶段
+- **状态**：已根据 Review 反馈完成修订，待执行计划
 
 ---
 
@@ -20,16 +20,17 @@
 
 ### 核心目标
 1. **单人全景画像 (`user <ucid|name>`)**：
-   - 支持工号（UCID）精确查询或员工姓名模糊查询（同名时列出候选工号消歧）；
-   - 跨该员工名下所有角色，聚合出真实生效的权限点全集；
+   - 支持工号（UCID）精确查询或员工姓名模糊查询（同名时列出候选工号与所属角色列表进行消歧）；
+   - 跨该员工名下所有**有效且未过期角色**，聚合出真实生效的权限点全集；
    - 对相同权限点的多角色约束自动执行**取值并集 (Union)**，真实反映其业务数据范围。
 2. **双人三层递进 Diff (`diff-user <userA> <userB>`)**：
    - **第一层（角色层）**：对比 `[A独有角色]`、`[B独有角色]`、`[共有角色]`；
    - **第二层（权限点层）**：对比 `[A独有权限点]`、`[B独有权限点]`、`[共有权限点]`；
-   - **第三层（约束/数据范围下探层）**：对共有权限点，深度比对关联约束（如城市、微服务、关联 API 等）的取值集合差集。
-3. **直出完整 Code 与 URL**：
+   - **第三层（约束/数据范围下探层）**：对共有权限点，深度比对关联约束（如城市、微服务、关联 API 等）的取值集合差集；
+   - 明确定义零差异状态（当两人权限 100% 完全相同时给出明确报告）。
+3. **直出完整 Code 与 Web 控制台 URL**：
    - 严格直出角色 Code (`roleId`)、权限点 Code (`permId`)、约束 Code (`extId`) 以及关联的接口路径 (`apiUrl`)；
-   - 提供 Luke 控制台直达 Web URL，方便产研一键复制到 Web 页面搜索或修改。
+   - 提供 Luke 控制台直达 Web URL（`portalUrl`），方便产研一键复制到 Web 页面搜索或在浏览器中直达修改。
 4. **AI 友好与自然语言转译**：
    - CLI 支持 `--json` 输出结构化机器格式，方便 AI 自动化提取分析；
    - CLI 默认文本模式输出彩色 Markdown 表格；
@@ -41,50 +42,77 @@
 
 ---
 
-## 3. 架构设计与实现结构
+## 3. 架构设计与分层解耦
+
+为了确保可测试性（零网络依赖测试）与高稳定性，系统拆分为**计算内核层**与**网络编排层**：
 
 ```mermaid
 flowchart TD
     UserQuery["用户指令: 查张林权限 / 对比张林与李四差异"] --> AI["AI Agent 唤起 leo-live-inspector"]
-    AI --> CLI["scripts/luke_query.js"]
-    CLI --> Core["scripts/common/luke.js"]
+    AI --> CLI["scripts/luke_query.js (CLI 路由 & 参数解析)"]
     
-    subgraph DataEngine ["数据引擎 (只读并发拉取)"]
-        Core --> R1["listRoles(appId) (角色与权限树)"]
-        Core --> R2["listRoleUsers(appId, roleId) (角色绑定员工)"]
+    subgraph NetworkOrchestrator ["网络编排层 (luke.js)"]
+        CLI --> NetFetch["getUserPermissions / compareUserPermissions"]
+        NetFetch --> Paging["分页排干 (Page Draining, pageSize=100)"]
+        Paging --> Concurrency["并发分批控制器 (Batch size: 6)"]
+        Concurrency --> R1["listRoles(appId) (角色与权限树)"]
+        Concurrency --> R2["listRoleUsers(appId, roleId) (角色绑定员工)"]
     end
     
-    subgraph MemoryIndex ["内存索引与聚合"]
-        R1 & R2 --> BIndex["构建双向索引: ucid ➔ roles, name ➔ [ucids]"]
-        BIndex --> Agg["getUserPermissions(appId, userIdentifier)<br/>角色合并 + 约束并集 (Union)"]
+    subgraph PureCore ["纯计算内核层 (100% 离线单元测试覆盖)"]
+        NetFetch --> Indexer["buildUserMemoryIndex(roles, roleUsersMap)"]
+        Indexer --> Resolver["resolveUserFromIndex(identifier, memoryIndex)"]
+        Resolver --> Aggregator["aggregateEffectivePermissions(userRoleBindings, allRoles)"]
+        Aggregator --> DiffCalc["diffUserProfiles(profileA, profileB)"]
     end
     
-    subgraph DiffEngine ["三层递进比对"]
-        Agg --> D1["1. 角色交集与差集"]
-        D1 --> D2["2. 权限点交集与差集"]
-        D2 --> D3["3. 共同权限点下的数据范围/约束取值比对 (cityCode, apiUrl, ...)"]
-    end
-    
-    DiffEngine --> Formatter["输出层: 完整 Code + API URL + Portal 链接"]
-    Formatter --> OutJSON["--json 机器可读格式 (供 AI 内部运算)"]
+    DiffCalc --> Formatter["输出格式化层: 注入完整 Code, apiUrl, Luke Portal URL"]
+    Formatter --> OutJSON["--json 机器可读格式 (供 AI 内部提取分析)"]
     Formatter --> OutTable["控制台表格 (终端人机交互)"]
     OutJSON --> AI_NL["AI 消化提炼，以清晰人话交付业务诊断结论"]
 ```
 
-### 修改与新增文件清单
+### 3.1 核心纯计算函数设计（Hermetic Unit Testable）
+1. `buildUserMemoryIndex(roles, roleUsersMap)`:
+   - 输入全量角色列表与角色-人员映射，构建：
+     - `ucidToRoles`: `Map<ucid, { user: { name }, roles: [roleSummary] }>`
+     - `nameToUsers`: `Map<name, Array<{ ucid, name, roles: [roleId] }>>`
+2. `resolveUserFromIndex(identifier, memoryIndex)`:
+   - 支持工号直接匹配；
+   - 若为姓名且匹配到唯一员工，直接返回；
+   - 若为姓名且匹配到多名同名员工，返回 `{ ambiguous: true, candidates: [{ ucid, name, roles }] }`，带出各自名下绑定的角色；
+   - 若未匹配到，返回 `{ notFound: true, identifier }`。
+3. `aggregateEffectivePermissions(ucid, userRoles, allRolesMap)`:
+   - 过滤失效或已过期角色（`active === false` 或 `roleExpireDate < now` 或 `userBindingExpireDate < now`）；
+   - 聚合提取所有权限点（`permId`）；
+   - 对相同权限点的 `exts` 执行**并集合并 (Union)**（例如 `apiUrl`、`cityCode` 取去重并集）；
+   - 生成单人权限画像。
+4. `diffUserProfiles(profileA, profileB)`:
+   - 计算三层差集与交集：
+     - 角色：`onlyA`, `onlyB`, `both`；
+     - 权限点：`onlyA`, `onlyB`, `both`；
+     - 约束下探：遍历 `both` 权限点，逐一比对约束数组。若存在差异记录为 `constraintDiffs`。
+   - 若零差异，返回 `summary.isIdentical: true`。
 
-| 文件 | 变更类型 | 核心职责 |
-| :--- | :--- | :--- |
-| `skills/leo-live-inspector/scripts/common/luke.js` | 增强 | 新增 `getUserPermissions`、`compareUserPermissions` 与 `resolveUserIdentifier` 核心聚合计算函数 |
-| `skills/leo-live-inspector/scripts/luke_query.js` | 增强 | 新增 `user` 和 `diff-user` CLI 子命令路由与表格格式化 |
-| `skills/leo-live-inspector/SKILL.md` | 增强 | 登记新能力与使用示例，注入【AI 交付与自然语言转译规范】 |
-| `skills/leo-live-inspector/tests/luke-user-diff.test.mjs` | 新增 | 覆盖工号/姓名解析、单人权限聚合、三层 Diff 及 CLI 执行的完整测试套件 |
+### 3.2 网络编排与性能防护（Pagination & Concurrency）
+1. **分页排干 (Page Draining)**：
+   - 拉取角色列表时使用 `pageSize: 100`，若 `total > 100` 自动循环翻页拉全；
+   - 拉取角色人员列表时同样排干分页，杜绝遗漏人员。
+2. **并发分批控制 (Concurrency Pool)**：
+   - 限制并发请求批次大小为 6 个，使用 `p-limit` 或分块循环，防止触发 Luke 后端限流或连接重置。
 
 ---
 
-## 4. 详细接口与数据结构规范
+## 4. 详细接口、URL 模板与数据结构规范
 
-### 4.1 单人画像返回结构 (`getUserPermissions`)
+### 4.1 Luke Web 控制台 URL 模板
+- **测试环境**：`https://test-luke.ke.com/#/role/detail?appId=${appId}&id=${roleId}`
+- **生产环境**：`https://luke.ke.com/#/role/detail?appId=${appId}&id=${roleId}`
+- **权限点直达链接**：`https://${host}/#/perm/detail?appId=${appId}&id=${permId}`
+
+---
+
+### 4.2 单人画像返回结构 (`getUserPermissions`)
 
 ```json
 {
@@ -99,7 +127,8 @@ flowchart TD
       "id": "anjiah5:inventoryAdmin",
       "name": "安家H5-库存管理员",
       "active": true,
-      "expireDate": "2099-12-31T23:59:59.000Z"
+      "expireDate": "2099-12-31T23:59:59.000Z",
+      "portalUrl": "https://test-luke.ke.com/#/role/detail?appId=iot_auth&id=anjiah5:inventoryAdmin"
     }
   ],
   "perms": [
@@ -107,6 +136,7 @@ flowchart TD
       "id": "anjia:lock:infoView",
       "name": "门锁信息查看",
       "sourceRoles": ["anjiah5:inventoryAdmin"],
+      "portalUrl": "https://test-luke.ke.com/#/perm/detail?appId=iot_auth&id=anjia:lock:infoView",
       "exts": {
         "cityCode": ["310000", "110000"],
         "apiUrl": ["/api/v1/locks/info", "/api/v1/locks/detail"]
@@ -116,7 +146,9 @@ flowchart TD
 }
 ```
 
-### 4.2 双人 Diff 返回结构 (`compareUserPermissions`)
+---
+
+### 4.3 双人 Diff 返回结构 (`compareUserPermissions`)
 
 ```json
 {
@@ -125,14 +157,27 @@ flowchart TD
   "appId": "iot_auth",
   "env": "test",
   "summary": {
+    "isIdentical": false,
     "roleCount": { "userA": 2, "userB": 1, "shared": 1 },
     "permCount": { "userA": 15, "userB": 10, "shared": 9 },
     "hasConstraintDiff": true
   },
   "rolesDiff": {
-    "onlyA": [{ "id": "anjiah5:inventoryAdmin", "name": "安家H5-库存管理员" }],
+    "onlyA": [
+      {
+        "id": "anjiah5:inventoryAdmin",
+        "name": "安家H5-库存管理员",
+        "portalUrl": "https://test-luke.ke.com/#/role/detail?appId=iot_auth&id=anjiah5:inventoryAdmin"
+      }
+    ],
     "onlyB": [],
-    "both": [{ "id": "common:employee", "name": "安家H5-普通员工" }]
+    "both": [
+      {
+        "id": "common:employee",
+        "name": "安家H5-普通员工",
+        "portalUrl": "https://test-luke.ke.com/#/role/detail?appId=iot_auth&id=common:employee"
+      }
+    ]
   },
   "permsDiff": {
     "onlyA": [
@@ -140,6 +185,7 @@ flowchart TD
         "id": "anjia:lock:delete",
         "name": "门锁删除",
         "sourceRoles": ["anjiah5:inventoryAdmin"],
+        "portalUrl": "https://test-luke.ke.com/#/perm/detail?appId=iot_auth&id=anjia:lock:delete",
         "exts": { "apiUrl": ["DELETE /api/v1/locks/:id"] }
       }
     ],
@@ -148,7 +194,8 @@ flowchart TD
       {
         "id": "anjia:lock:infoView",
         "name": "门锁信息查看",
-        "hasScopeDiff": true
+        "hasScopeDiff": true,
+        "portalUrl": "https://test-luke.ke.com/#/perm/detail?appId=iot_auth&id=anjia:lock:infoView"
       }
     ]
   },
@@ -170,11 +217,74 @@ flowchart TD
 
 ---
 
+### 4.4 同名消歧结构 (Ambiguity Schema)
+
+当输入姓名匹配到多名员工时，CLI 返回如下 JSON（退出码 0，带 `ambiguous: true`）：
+
+```json
+{
+  "ambiguous": true,
+  "query": "张林",
+  "appId": "iot_auth",
+  "message": "系统中检索到多名同名员工，请使用精准工号重新查询",
+  "candidates": [
+    {
+      "ucid": "1000000030560224",
+      "name": "张林",
+      "roles": ["anjiah5:inventoryAdmin", "common:employee"]
+    },
+    {
+      "ucid": "1000000088888888",
+      "name": "张林",
+      "roles": ["device:operator"]
+    }
+  ]
+}
+```
+
+---
+
+### 4.5 CLI 命令行接口规范
+
+在 `scripts/luke_query.js` 中：
+- `parseArgs` 升级：提取 `positional[0]` (command), `positional[1]` (targetId / userA), `positional[2]` (targetId2 / userB)。
+- 子命令 1：`node scripts/luke_query.js user <ucid|name> [--app <appId>] [-e test|prod] [--json]`
+- 子命令 2：`node scripts/luke_query.js diff-user <userA> <userB> [--app <appId>] [-e test|prod] [--json]`
+
+#### 终端默认文本表格输出样式
+```text
+================================================================================
+🔍 [测试环境] 人员权限差异对比报告: 张林 vs 李四 (App: iot_auth)
+================================================================================
+
+📌 概览统计:
+   • 角色差异: 张林 2 个 | 李四 1 个 | 共同角色 1 个
+   • 权限点差异: 张林 15 个 | 李四 10 个 | 共同权限点 9 个
+   • 约束差异: 存在 1 项数据范围差异
+
+🎭 角色差异对比 (Role Diff):
+┌──────────┬──────────────────────────┬──────────────────────┬────────────────────────────────────────────────────────┐
+│ 差异状态 │ 角色 Code                │ 角色名称             │ 控制台直达链接                                         │
+├──────────┼──────────────────────────┼──────────────────────┼────────────────────────────────────────────────────────┤
+│ [A 独有] │ anjiah5:inventoryAdmin   │ 安家H5-库存管理员    │ https://test-luke.ke.com/#/role/detail?id=...          │
+│ [共有]   │ common:employee          │ 安家H5-普通员工      │ https://test-luke.ke.com/#/role/detail?id=...          │
+└──────────┴──────────────────────────┴──────────────────────┴────────────────────────────────────────────────────────┘
+
+🔐 约束与数据范围深度下探 (Constraint Scope Diff):
+┌─────────────────────┬──────────────────┬──────────────────────┬──────────────────────┬─────────────────────────────┐
+│ 权限点 Code         │ 权限点名称       │ 张林范围 (User A)    │ 李四范围 (User B)    │ 差异说明                    │
+├─────────────────────┼──────────────────┼──────────────────────┼──────────────────────┼─────────────────────────────┤
+│ anjia:lock:infoView │ 门锁信息查看     │ 310000, 110000       │ 310000               │ 李四缺少城市范围: [110000]  │
+└─────────────────────┴──────────────────┴──────────────────────┴──────────────────────┴─────────────────────────────┘
+```
+
+---
+
 ## 5. AI 自然语言交付与用户沟通规范
 
-当 AI 获取到上述比对数据后，**必须**按以下结构向用户进行自然语言汇报：
+当 AI 获取到上述比对数据后，**严禁直接倾倒 JSON**，必须按以下结构向用户进行自然语言汇报：
 
-1. **核心结论先行**：第一句话直截了当回答差异根因（“A 拥有 XX 功能，而 B 缺少该功能”或“两者功能相同，但 B 缺少 XX 城市/微服务范围”）；
+1. **核心结论先行**：第一句话直截了当回答差异根因（“李四查不到的原因是缺少北京数据范围”或“李四缺少门锁管理权限”）；
 2. **结构化 Code 与 URL 标出**：
    - 角色：`` `anjiah5:inventoryAdmin` ``
    - 权限点：`` `anjia:lock:infoView` ``
@@ -185,11 +295,21 @@ flowchart TD
 
 ---
 
-## 6. 异常边界与错误处理
+## 6. 自动化测试套件设计 (`tests/luke-user-diff.test.mjs`)
 
-1. **同名员工消歧**：
-   - 若姓名匹配到多名员工，返回 `{ ambiguous: true, candidates: [...] }`，AI 转用自然语言询问用户工号；
-2. **员工无权限**：
-   - 若某员工名下无任何角色，明确返回并友好提示“该员工在系统当前未绑定任何角色”；
-3. **凭据失效**：
-   - 自动联动 `browser_credentials.js` 从 Chrome 扩展探针提取凭据，若无则输出引导复制语句。
+测试用例完全基于静态 Mock 夹具（Fixtures），100% 离线可重放：
+1. **同名消歧与工号解析测试**：
+   - 测试工号精准匹配；
+   - 测试同名返回带 `roles` 的候选列表；
+   - 测试未知用户返回 `notFound`。
+2. **权限画像聚合与约束合并测试**：
+   - 验证多角色重叠权限点时的约束并集（`cityCode`、`apiUrl`）；
+   - 验证已过期角色或绑定被自动过滤。
+3. **三层 Diff 引擎算法测试**：
+   - 测试单人有权限单人空权限；
+   - 测试角色相同但权限点不同；
+   - 测试权限点相同但约束范围不同；
+   - 测试 100% 相同配置（`isIdentical: true`）。
+4. **CLI 命令行格式化测试**：
+   - 验证 `user` 子命令在 `--json` 与文本表格模式的输出完整性；
+   - 验证 `diff-user` 子命令包含完整的 Code、URL 与差异说明。
