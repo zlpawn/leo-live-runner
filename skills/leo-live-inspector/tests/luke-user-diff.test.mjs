@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildUserMemoryIndex,
   resolveUserFromIndex,
@@ -510,5 +514,61 @@ test('compareUserPermissions - matched diff, ambiguous and notFound handling', a
   assert.equal(diffNotFoundB.target, 'userB');
   assert.equal(diffNotFoundB.identifier, 'unknownB');
 });
+
+const execFileAsync = promisify(execFile);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+
+test('CLI - luke_query.js --help outputs user and diff-user instructions', async () => {
+  const { stdout } = await execFileAsync('node', [
+    path.join(SCRIPTS_DIR, 'luke_query.js'),
+    '--help'
+  ]);
+  assert.ok(stdout.includes('user <ucid|name>'), 'Should describe user subcommand');
+  assert.ok(stdout.includes('diff-user <user1> <user2>'), 'Should describe diff-user subcommand');
+  assert.ok(stdout.includes('node scripts/luke_query.js user 张林'), 'Should include user example');
+  assert.ok(stdout.includes('node scripts/luke_query.js diff-user 张林 李四'), 'Should include diff-user example');
+});
+
+test('CLI - luke_query.js diff-user without arguments fails with exit code 1', async () => {
+  try {
+    await execFileAsync('node', [
+      path.join(SCRIPTS_DIR, 'luke_query.js'),
+      'diff-user'
+    ]);
+    assert.fail('Expected diff-user to fail when targetId and targetId2 are missing');
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.ok(err.stderr.includes('❌ diff-user 需要提供两个目标人员 (工号或姓名)，例如: node scripts/luke_query.js diff-user 张林 李四'));
+  }
+
+  // Also test with only 1 argument
+  try {
+    await execFileAsync('node', [
+      path.join(SCRIPTS_DIR, 'luke_query.js'),
+      'diff-user',
+      '张林'
+    ]);
+    assert.fail('Expected diff-user to fail when targetId2 is missing');
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.ok(err.stderr.includes('❌ diff-user 需要提供两个目标人员 (工号或姓名)，例如: node scripts/luke_query.js diff-user 张林 李四'));
+  }
+});
+
+test('CLI - luke_query.js user without arguments fails with exit code 1', async () => {
+  try {
+    await execFileAsync('node', [
+      path.join(SCRIPTS_DIR, 'luke_query.js'),
+      'user'
+    ]);
+    assert.fail('Expected user to fail when targetId is missing');
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.ok(err.stderr.includes('❌ 请提供员工工号 (ucid) 或姓名，例如: node scripts/luke_query.js user 张林'));
+  }
+});
+
 
 

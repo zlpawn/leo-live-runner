@@ -12,6 +12,7 @@
 
 import {
   DEFAULT_APP_ID,
+  EXT_NAMES,
   listExts,
   getExt,
   listExtTypes,
@@ -20,13 +21,27 @@ import {
   getPerm,
   listRoles,
   getRole,
-  listRoleUsers
+  listRoleUsers,
+  getUserPermissions,
+  compareUserPermissions
 } from './common/luke.js';
+
+function formatScopeExts(exts) {
+  if (!exts || Object.keys(exts).length === 0) return '无';
+  return Object.entries(exts)
+    .map(([extId, vals]) => {
+      const extName = EXT_NAMES[extId] || extId;
+      const valStr = Array.isArray(vals) ? vals.join(', ') : String(vals);
+      return `${extName}: [${valStr}]`;
+    })
+    .join(' | ');
+}
 
 function parseArgs(args) {
   const options = {
     command: null,
     targetId: null,
+    targetId2: null,
     appId: DEFAULT_APP_ID,
     env: 'test',
     keyword: null,
@@ -65,6 +80,7 @@ function parseArgs(args) {
 
   options.command = positional[0] || 'help';
   options.targetId = positional[1] || null;
+  options.targetId2 = positional[2] || null;
   return options;
 }
 
@@ -73,14 +89,16 @@ function printHelp() {
 🔍 Leo Luke Permission Query Engine (测试环境权限中心探查引擎)
 
 使用格式:
-  node scripts/luke_query.js <subcommand> [targetId] [options]
+  node scripts/luke_query.js <subcommand> [targetId] [targetId2] [options]
 
 常用子命令:
-  ext [extId]           查询约束字典列表或指定约束的枚举详情
-  types                 查询系统已注册的自定义约束类型 (如 apiUrl, feBtn, feMenu)
-  perm [permId]         查询权限点列表或指定权限点详情 (含挂载约束、默认值等)
-  role [roleId]         查询角色列表或指定角色的权限树详情
-  users <roleId>        查询指定角色下已绑定的员工列表
+  ext [extId]                 查询约束字典列表或指定约束的枚举详情
+  types                       查询系统已注册的自定义约束类型 (如 apiUrl, feBtn, feMenu)
+  perm [permId]               查询权限点列表或指定权限点详情 (含挂载约束、默认值等)
+  role [roleId]               查询角色列表或指定角色的权限树详情
+  users <roleId>              查询指定角色下已绑定的员工列表
+  user <ucid|name>            查询指定员工的生效权限画像与绑定角色
+  diff-user <user1> <user2>   对比两人之间的权限差异 (三层递进: 角色/权限点/数据约束)
 
 选项:
   --app <appId>         目标系统应用标识 (默认: iot_auth)
@@ -100,6 +118,10 @@ function printHelp() {
   node scripts/luke_query.js role -q 超管                # 检索超管角色
   node scripts/luke_query.js role admin                 # 查看 admin 角色的权限树与约束取值
   node scripts/luke_query.js users admin                # 查看 admin 角色绑定的员工
+  node scripts/luke_query.js user 1000000030560224
+  node scripts/luke_query.js user 张林
+  node scripts/luke_query.js diff-user 张林 李四
+  node scripts/luke_query.js diff-user 1001 1002 --json
 `);
 }
 
@@ -111,7 +133,7 @@ async function main() {
     return;
   }
 
-  const { command, targetId, appId, env, page, pageSize, keyword, json, cookie, setCookie } = options;
+  const { command, targetId, targetId2, appId, env, page, pageSize, keyword, json, cookie, setCookie } = options;
   const isProd = env === 'prod' || env === 'production';
   const envTag = isProd ? '🚨 线上生产环境 [luke.ke.com]' : '🧪 测试环境 [test-luke.ke.com]';
 
@@ -279,6 +301,189 @@ async function main() {
             '姓名': u.user?.name || '-',
             '有效期': u.expireDate || '永久'
           })));
+        }
+        break;
+      }
+
+      case 'user': {
+        if (!targetId) {
+          console.error('❌ 请提供员工工号 (ucid) 或姓名，例如: node scripts/luke_query.js user 张林');
+          process.exit(1);
+        }
+
+        const res = await getUserPermissions(appId, targetId, { cookie, setCookie, env });
+
+        if (res.ambiguous) {
+          if (json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.log(`⚠️ 系统中检索到同名员工 [${targetId}]，请使用精准工号重新查询：`);
+            (res.candidates || []).forEach(c => {
+              console.log(`   • 工号: ${c.ucid} | 姓名: ${c.name} | 拥有角色: ${(c.roles || []).join(', ') || '无'}`);
+            });
+          }
+          break;
+        }
+
+        if (res.notFound) {
+          if (json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            console.error(`❌ [${envTag}] 系统中未找到员工 [${targetId}] 的任何角色或权限记录`);
+          }
+          break;
+        }
+
+        if (json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`\n👤 员工权限全景画像 (${envTag} | 系统: ${appId}): [${res.user?.ucid || targetId}] ${res.user?.name || ''}`);
+
+          console.log(`\n🎭 生效角色列表 (共 ${(res.roles || []).length} 个):`);
+          if (res.roles && res.roles.length > 0) {
+            console.table(res.roles.map(r => ({
+              '角色标识 (Code)': r.id,
+              '角色名称': r.name,
+              '控制台直达链接': r.portalUrl
+            })));
+          } else {
+            console.log('   (暂无生效角色)');
+          }
+
+          console.log(`\n🔐 生效权限点列表 (共 ${(res.perms || []).length} 个):`);
+          if (res.perms && res.perms.length > 0) {
+            console.table(res.perms.map(p => ({
+              '权限点标识 (Code)': p.id,
+              '权限点名称': p.name,
+              '来源角色': (p.sourceRoles || []).join(', ') || '-',
+              '生效约束范围 (含接口/城市等)': formatScopeExts(p.exts),
+              '控制台直达链接': p.portalUrl
+            })));
+          } else {
+            console.log('   (暂无生效权限点)');
+          }
+        }
+        break;
+      }
+
+      case 'diff-user': {
+        if (!targetId || !targetId2) {
+          console.error('❌ diff-user 需要提供两个目标人员 (工号或姓名)，例如: node scripts/luke_query.js diff-user 张林 李四');
+          process.exit(1);
+        }
+
+        const res = await compareUserPermissions(appId, targetId, targetId2, { cookie, setCookie, env });
+
+        if (res.ambiguous) {
+          if (json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            const queryName = res.query || (res.target === 'userA' ? targetId : targetId2);
+            console.log(`⚠️ 系统中检索到同名员工 [${queryName}]，请使用精准工号重新查询：`);
+            (res.candidates || []).forEach(c => {
+              console.log(`   • 工号: ${c.ucid} | 姓名: ${c.name} | 拥有角色: ${(c.roles || []).join(', ') || '无'}`);
+            });
+          }
+          break;
+        }
+
+        if (res.notFound) {
+          if (json) {
+            console.log(JSON.stringify(res, null, 2));
+          } else {
+            const targetIdStr = res.identifier || (res.target === 'userA' ? targetId : targetId2);
+            console.error(`❌ [${envTag}] 系统中未找到员工 [${targetIdStr}] 的任何角色或权限记录`);
+          }
+          break;
+        }
+
+        if (json) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          const nameA = res.userA?.name || targetId;
+          const nameB = res.userB?.name || targetId2;
+
+          console.log(`\n🔍 人员权限差异对比报告 (${envTag} | 系统: ${appId}): ${nameA} vs ${nameB}`);
+          console.log(`\n📊 对比概览:`);
+          console.log(`   • 角色数量: ${nameA}: ${res.summary?.roleCount?.userA ?? 0} | ${nameB}: ${res.summary?.roleCount?.userB ?? 0} | 共同拥有: ${res.summary?.roleCount?.shared ?? 0}`);
+          console.log(`   • 权限点数量: ${nameA}: ${res.summary?.permCount?.userA ?? 0} | ${nameB}: ${res.summary?.permCount?.userB ?? 0} | 共同拥有: ${res.summary?.permCount?.shared ?? 0}`);
+          console.log(`   • 约束差异: ${res.summary?.hasConstraintDiff ? '存在' : '无'}`);
+          if (res.summary?.isIdentical) {
+            console.log(`   🎉 两人在当前系统下的生效角色、权限点及数据范围完全一致！`);
+          }
+
+          // 1. Role Diff table
+          console.log(`\n🎭 角色层差异对比:`);
+          const roleDiffRows = [
+            ...(res.rolesDiff?.onlyA || []).map(r => ({
+              '差异状态': '[A独有]',
+              '角色标识 (Code)': r.id,
+              '角色名称': r.name,
+              '控制台直达链接': r.portalUrl
+            })),
+            ...(res.rolesDiff?.onlyB || []).map(r => ({
+              '差异状态': '[B独有]',
+              '角色标识 (Code)': r.id,
+              '角色名称': r.name,
+              '控制台直达链接': r.portalUrl
+            })),
+            ...(res.rolesDiff?.both || []).map(r => ({
+              '差异状态': '[共有]',
+              '角色标识 (Code)': r.id,
+              '角色名称': r.name,
+              '控制台直达链接': r.portalUrl
+            }))
+          ];
+          if (roleDiffRows.length > 0) {
+            console.table(roleDiffRows);
+          } else {
+            console.log('   (双方均无生效角色)');
+          }
+
+          // 2. Perm Diff table
+          console.log(`\n🔐 权限点层差异对比:`);
+          const permDiffRows = [
+            ...(res.permsDiff?.onlyA || []).map(p => ({
+              '差异状态': '[A独有]',
+              '权限点标识 (Code)': p.id,
+              '权限点名称': p.name,
+              '来源角色': (p.sourceRoles || []).join(', ') || '-'
+            })),
+            ...(res.permsDiff?.onlyB || []).map(p => ({
+              '差异状态': '[B独有]',
+              '权限点标识 (Code)': p.id,
+              '权限点名称': p.name,
+              '来源角色': (p.sourceRoles || []).join(', ') || '-'
+            })),
+            ...(res.permsDiff?.both || []).map(p => ({
+              '差异状态': '[共有]',
+              '权限点标识 (Code)': p.id,
+              '权限点名称': p.name,
+              '来源角色': (p.sourceRoles || []).join(', ') || '-'
+            }))
+          ];
+          if (permDiffRows.length > 0) {
+            console.table(permDiffRows);
+          } else {
+            console.log('   (双方均无生效权限点)');
+          }
+
+          // 3. Constraint Diff table (only rows where onlyInA.length > 0 || onlyInB.length > 0)
+          const filteredConstraintDiffs = (res.constraintDiffs || []).filter(
+            d => (d.onlyInA && d.onlyInA.length > 0) || (d.onlyInB && d.onlyInB.length > 0)
+          );
+
+          if (filteredConstraintDiffs.length > 0) {
+            console.log(`\n📐 数据约束差异明细 (Tier 3 下探):`);
+            console.table(filteredConstraintDiffs.map(d => ({
+              '权限点 Code': d.permId,
+              '权限点名称': d.permName,
+              '约束字段': d.extName || d.extId,
+              [`${res.userA?.name || nameA} 范围`]: (d.scopeA && d.scopeA.length > 0) ? d.scopeA.join(', ') : '无',
+              [`${res.userB?.name || nameB} 范围`]: (d.scopeB && d.scopeB.length > 0) ? d.scopeB.join(', ') : '无',
+              '差异说明': d.explanation
+            })));
+          }
         }
         break;
       }
