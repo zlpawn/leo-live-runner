@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查，线上与删除操作强制执行 Pre-flight 预审与用户确认闭环。支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -13,7 +13,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析；
 7. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线；
-8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员绑定）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
+8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员画像/双人三层 Diff）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；支持**单人权限全景画像 (`user <ucid|name>`)** 与 **双人三层深度对比 (`diff-user <user1> <user2>`)**，具备约束自动取并集计算、角色/权限点/数据约束范围三层渐进式对比能力，直接输出角色 Code、权限 Code、约束 Code、关联 API 路径与 Luke Portal 控制台直达链接；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js`、`scripts/feci_deploy.js`、`scripts/luke_query.js` 与 `scripts/luke_modify.js` 等）是 AI 专用的后台探查、交付与运维工具**。
@@ -102,6 +102,8 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **“看下 anjia:lock:infoView 权限点挂载的接口与约束”** | `node scripts/luke_query.js perm anjia:lock:infoView` | 提取权限点关联的微服务、API 路径与 HTTP Method 候选集合 |
 | **“查看角色列表或超管角色的权限”** | `node scripts/luke_query.js role admin` | 角色基础属性与全量权限点/限定约束树 |
 | **“查看 admin 角色下绑定了哪些员工”** | `node scripts/luke_query.js users admin` | 提取该角色绑定的工号、姓名与有效期 |
+| **“查看员工张林名下生效的所有角色与权限点”** | `node scripts/luke_query.js user 张林` | 聚合多角色生效权限点与约束并集全景画像，输出完整 Code 与 Portal 直达链接 |
+| **“对比张林和李四之间的权限差异与数据范围”** | `node scripts/luke_query.js diff-user 张林 李四` | 三层渐进式对比结论 (角色/权限点/数据约束)，定位缺少的具体权限并给出修复指引 |
 | **“在测试环境建一个新约束 myExt”** | `node scripts/luke_modify.js create-ext myExt 我的约束 Choice` | 直接创建全新约束字典项 |
 | **“往 serviceId 约束里追加一个微服务 my-new-svc”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/luke_modify.js update-ext serviceId --add-choice "my-new-svc:新服务"` | 展示枚举 Diff 对比单，**停下等待用户明确确认** |
 | **用户明确确认更新约束** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/luke_modify.js update-ext serviceId --confirm --add-choice "my-new-svc:新服务"` | 正式写入 GraphQL 并回查校验 |
@@ -606,6 +608,14 @@ node scripts/luke_query.js role -q 看板管理员 -e prod
 # 查询角色名下绑定的真实员工列表
 node scripts/luke_query.js users admin
 node scripts/luke_query.js users admin -e prod
+
+# 👤 查询员工名下生效的角色与权限点全景画像 (支持工号或姓名)
+node scripts/luke_query.js user 张林
+node scripts/luke_query.js user 1000000030560224 -e prod
+
+# 👥 对比两人之间的权限差异 (三层递进: 角色 -> 权限点 -> 数据约束)
+node scripts/luke_query.js diff-user 张林 李四
+node scripts/luke_query.js diff-user 1000000030560224 1000000012345678 -e prod --json
 ```
 
 #### (2) 变更引擎 (`scripts/luke_modify.js`)
@@ -655,6 +665,76 @@ node scripts/luke_modify.js bind-role-user anjiah5:inventoryAdmin 10000000305602
 node scripts/luke_modify.js unbind-role-user anjiah5:inventoryAdmin 1000000030560224
 node scripts/luke_modify.js unbind-role-user anjiah5:inventoryAdmin 1000000030560224 --confirm
 ```
+
+---
+
+#### 👤 员工权限全景画像与双人三层深度 Diff (User & Diff-User)
+
+在日常权限排障与线上问题核实中，“为什么张三能访问而李四报 403”、“某员工到底拥有哪些实际生效的角色与数据范围”是最常见的排障诉求。本功能通过并发分页与内存反查索引，提供极速的单人全景画像与双人深度对比能力。
+
+##### 1. CLI 命令与参数选项
+
+```bash
+# 1. 员工单人权限全景画像 (User Profile)
+node scripts/luke_query.js user <ucid|name> [--app <appCode>] [-e test|prod] [--json]
+
+# 2. 双人权限三层深度 Diff (User Diff)
+node scripts/luke_query.js diff-user <user1> <user2> [--app <appCode>] [-e test|prod] [--json]
+```
+
+* `<ucid|name>`: 支持输入员工工号（如 `1000000030560224`）或姓名（如 `张林`）；遇到同名员工时自动激活**消歧保护机制**，列出所有同名候选人工号与所属角色供进一步精准查询；
+* `--app <appCode>`: 显式指定目标应用系统（默认为 `DEFAULT_APP_ID` 即 `iot_auth`）；
+* `-e / --env <test|prod>`: 环境切换（默认 `test` 测试环境 `test-luke.ke.com`，支持 `-e prod` 线上生产环境 `luke.ke.com`）；
+* `--json`: 输出纯净机器可读结构化 JSON，供上层测试框架或自动化编排消费。
+
+##### 2. 单人画像聚合与多角色约束并集自动合并
+- **全量角色自动扫描**: 后台自动遍历目标应用系统名下的全部角色，并发分页抓取角色绑定的员工列表，在内存中构建实时反查索引（`UserMemoryIndex`）；
+- **生命周期状态过滤**: 严格校验角色有效期 (`expireDate`)、用户绑定有效期 (`userBindingExpireDate`) 与启用状态 (`active`)，自动过滤已过期或被禁用的无效角色；
+- **多角色权限点与约束自动取并集**: 当员工通过多个不同角色获得同一个权限点时，引擎自动对挂载的各类数据约束取并集（如角色 A 赋予 `cityCode: [110000]`，角色 B 赋予 `cityCode: [310000]`，画像将自动合并生效范围为 `[110000, 310000]`）；
+- **完整资产直达输出**: 直接输出角色标识 (`roleId`)、角色名称、权限点标识 (`permId`)、权限点名称、生效数据约束（含关联接口路径 `apiUrl`、微服务 `serviceId`、城市范围 `cityCode` 等）、来源角色，以及 **Luke 控制台 Web 直达链接 (`portalUrl`)**。
+
+##### 3. 双人权限三层渐进式深度 Diff 机制
+当对比员工 A 与员工 B 的权限差异时，系统自顶向下进行三层逐级下探分析：
+* **Tier 1: 角色层差异 (Roles Diff)**
+  - 标记 `[A独有]`、`[B独有]`、`[共有]` 角色；
+  - 附带角色 Code、角色名称及 Luke 控制台直达链接；
+* **Tier 2: 权限点层差异 (Permissions Diff)**
+  - 标记 `[A独有]`、`[B独有]`、`[共有]` 权限点；
+  - 标明该权限点来源于哪个具体角色，直观揭示因角色缺失带来的权限断层；
+* **Tier 3: 数据约束深度下探 (Constraint Scope Diff)**
+  - 针对两人共有的权限点，深度逐字段比对生效约束取值集合（如城市代码 `cityCode`、API 路径 `apiUrl`、微服务标识 `serviceId` 等取值差集）；
+  - 精准计算单方独有约束值集合（`onlyInA` vs `onlyInB`），并在终端仅展示存在差异的约束行，屏蔽无差异噪点；
+  - 若两人权限全景画像 100% 完全一致，直接输出庆贺横幅 `🎉 两人名下在当前系统的生效权限与数据范围 100% 完全一致！`。
+
+##### 4. 核心字段与控制台 Web 直达链接
+为方便技术人员与业务负责人核验，所有输出均完整呈现以下五大核心要素：
+1. **角色 Code (`roleId`)**: 系统级唯一角色标识（如 `anjiah5:inventoryAdmin`）；
+2. **权限 Code (`permId`)**: 接口/操作唯一权限点标识（如 `anjia:lock:infoView`）；
+3. **约束 Code (`extId`)**: 维度唯一标识（如 `cityCode`、`apiUrl`、`serviceId`）；
+4. **关联接口路径 (`apiUrl`)**: 真实后端受控 API 路径（如 `/api/v1/locks/info`）；
+5. **Luke 控制台 Web 直达 URL (`portalUrl`)**: 自动拼装包含环境前缀与目标 Tab 的官方控制台链接（如 `https://luke.ke.com/#/app/iot_auth/role`），可直接在浏览器一键打开。
+
+---
+
+### 📢 AI 交互与自然语言交付规范 (AI Delivery Standard)
+
+在为最终用户提供权限诊断、查权与授权对比服务时，AI **必须严格遵守以下自然语言交付铁律**：
+
+1. **🚫 严禁直接向最终用户倾倒 CLI 原始 JSON / 冗长终端输出**：
+   - CLI 返回的结构化 JSON 仅供 AI 后台精准推理和提取事实证据；
+   - 对外交付时必须转化为结构清晰、重点突出的 Markdown 概览结论与表格，严禁大段贴出未经提炼的 JSON 字符串。
+2. **🎯 核心结论先行 (Conclusion First)**：
+   - 回复的第一句话必须直奔主题，给出定性排障结论。例如：
+     > “**张林相比李四，缺少角色【安家H5-库存管理员 (`anjiah5:inventoryAdmin`)】，导致缺少权限点【门锁删除 (`anjia:lock:delete`)】；在共有权限【门锁查看】下，缺少城市代码 `310000 (上海)` 的数据权限。**”
+3. **🔗 完整列出 Code 与 Luke 控制台直达 URL**：
+   - 提及角色时必须列出完整角色 Code（如 `anjiah5:inventoryAdmin`）；
+   - 提及权限点时必须列出完整权限 Code（如 `anjia:lock:infoView`）；
+   - 提及约束时必须列出约束 Code 与具体取值差集（如 `apiUrl: [/api/v1/locks/delete]`）；
+   - 必须在报告中附带 Luke Portal Web 直达链接，方便用户或管理员一键点击跳转至 Luke 控制台进行审核、申请或分配。
+4. **🛠️ 给出明确、可落地的排障与修复指引**：
+   - **缺失角色时**：明确告知缺少哪个角色 Code，并指引用户前往 Luke 申请该角色，或提供管理员绑定命令：`node scripts/luke_modify.js bind-role-user <roleId> <ucid>`；
+   - **角色具备但缺少数据约束时**：明确指出缺失的城市代码或接口范围，指引在角色授权配置中通过 `grant-role-perm` 扩充对应约束取值；
+   - **针对 403 接口鉴权拦截排查**：直接反查报错接口 URL 是否挂载在对应权限点下，明确指出是角色未绑定、接口未加权限点、还是限定约束（如 cityCode）未包含当前操作上下文。
 
 ---
 
