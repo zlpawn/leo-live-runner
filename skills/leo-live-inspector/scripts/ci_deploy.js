@@ -164,7 +164,7 @@ async function autoDiscoverServiceMeta(serviceId, cookie) {
   let workflowName = null;
   let defaultBranch = 'master';
 
-  const wfRes = await doRequest('https://shipwright.ke.com/workflow-context/v1/workflows/query?pageNumber=1&pageSize=10', {
+  const wfRes = await doRequest('https://shipwright.ke.com/workflow-context/v1/workflows/query?pageNumber=1&pageSize=50', {
     method: 'POST',
     body: {
       'labels.cloud_intra_ke_com/service_id': serviceId,
@@ -173,10 +173,15 @@ async function autoDiscoverServiceMeta(serviceId, cookie) {
   }, cookie);
 
   if (wfRes.statusCode === 200 && wfRes.json?.list?.length > 0) {
-    const list = wfRes.json.list;
+    // 剔除已删除构建器残影：Shipwright 列表会返回 deleted=1 的历史构建器且可能排在前列，
+    // 误选会导致构建挂在废构建器上（实测踩坑：zulin-iot-platform 的"测试环境构建"已删但排首位）
+    const list = wfRes.json.list.filter(w =>
+      w.labels?.['app-svc_ke_com/deleted'] !== '1' &&
+      w.labels?.['app-svc_ke_com/cleared'] !== '1'
+    );
     // 优先寻找测试环境或名称含 test 的构建器
-    const testWf = list.find(w => 
-      w.labels?.['app-svc_ke_com/env'] === 'test' || 
+    const testWf = list.find(w =>
+      w.labels?.['app-svc_ke_com/env'] === 'test' ||
       (w.name && /test|测试/i.test(w.name))
     ) || list[0];
 
@@ -536,19 +541,27 @@ async function main() {
   }
 
   // 6. 解析或自嗅探构建与部署元数据
+  // --build-only 只需要构建器（部署前会提前退出），不强制要求工作负载
   let meta = getServiceCiDeployMeta(serviceId);
-  if (!meta || !meta.ci?.workflowId || !meta.deploy?.test?.workloadId) {
+  if (!meta || !meta.ci?.workflowId) {
     meta = await autoDiscoverServiceMeta(serviceId, cookie);
   }
 
-  if (!meta || !meta.ci?.workflowId || !meta.deploy?.test?.workloadId) {
-    console.log(`❌ 无法解析或嗅探到服务 [${serviceId}] 的构建器或测试工作负载。`);
-    console.log(`   请确认当前账号在云平台/CI 系统中是否有该服务的访问权限。`);
+  if (!meta || !meta.ci?.workflowId) {
+    console.log(`❌ 无法解析或嗅探到服务 [${serviceId}] 的构建器。`);
+    console.log(`   请确认当前账号在 CI 系统中是否有该服务的访问权限。`);
+    process.exit(1);
+  }
+  if (!isBuildOnly && !meta.deploy?.test?.workloadId) {
+    console.log(`❌ 无法解析或嗅探到服务 [${serviceId}] 的测试环境工作负载。`);
+    console.log(`   请确认当前账号在云平台中是否有该服务的访问权限；`);
+    console.log(`   若仅需构建，可追加 --build-only 跳过部署。`);
     process.exit(1);
   }
 
   const workflowId = meta.ci.workflowId;
-  const workloadId = meta.deploy.test.workloadId;
+  // build-only 模式下可能没有工作负载信息，展示用占位符（不会走到部署分支）
+  const workloadId = meta.deploy?.test?.workloadId || '(仅构建，未解析工作负载)';
 
   // 7. Dry-Run 预检模式
   if (isDryRun) {

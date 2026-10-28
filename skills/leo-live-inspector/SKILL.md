@@ -425,6 +425,16 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
    - 探测验通后，自动将 `ciWorkflowId` 和 `testWorkloadId` 持久化写入 `~/.shrimp/skills/live-inspector/service_catalog.json`；
    - 下次执行直接命中本地缓存，实现 **0 手动配置、0 维护成本、越用越聪明**。
 
+### 5.2.1 ⚠️ 构建器选择注意 (Builder Selection Pitfalls)
+
+> 📌 2026-10-28 实测踩坑沉淀（zulin-iot-platform 部署实战）：
+
+1. **已删除构建器残影**：Shipwright 的 `workflows/query` 列表**会返回已删除的构建器**（`app-svc_ke_com/deleted=1`），且残影可能排在列表前列。`ci_deploy.js` 的嗅探逻辑已内置过滤，但 AI 手动查询构建器列表时**必须核对 `deleted`/`cleared` 标签**，否则会选到废构建器（实测：`zulin-iot-platform----测试环境构建` 已删但排首位，名字与有效的 `zulin-iot-platform----测试构建` 仅差"环境"二字）；
+2. **同名/近名构建器辨识**：一个服务名下常有 20+ 个构建器（发二方包、公共库、手工传包通道等）。判断依据按优先级：`env` 标签 = `test` > 名称含"测试构建" > 其他。**api 二方包发布构建器（`iot-platform-api发包`）与服务部署构建器是两回事**，只有改动 api 模块对外契约时才需要前者；
+3. **`--build-only` 不需要工作负载**：仅构建模式下只校验构建器存在，测试工作负载可以缺失（部署前会提前退出）；完整流水线才要求两者齐备；
+4. **服务云查询走统一凭证通道**：查工作负载等云平台 API 必须用 `scripts/common/credentials.js` 的 `loadCloudCookie()`（读 `~/.shrimp/skills/live-inspector/cloud_token.json`），**不要手动拼接其他 cookie 文件**（如 `luke_cookie.json` 对 cloud.intra.ke.com 无效，会误判为"无权限"）；
+5. **构建挂到废构建器上仍可能"成功"**：已删除构建器上触发的构建记录仍会正常执行并产出镜像（实测 SUCCESS），但产物可信度存疑——发现选错构建器后应改用有效构建器重新构建，以有效构建器的产物为准。
+
 ---
 
 ### 5.3 🛡️ 生产发布安全铁律 (Strict Test-Only & Production Advisor SOP)

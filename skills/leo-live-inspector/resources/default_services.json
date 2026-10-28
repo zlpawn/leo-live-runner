@@ -5,7 +5,20 @@
     "realAppId": "zulin-iot-platform",
     "port": "6384",
     "database": "iot_plat",
-    "dbDesc": "IoT平台主库"
+    "dbDesc": "IoT平台主库",
+    "ci": {
+      "workflowId": "644b3f9e3706ad00015b2128",
+      "workflowName": "zulin-iot-platform----测试构建",
+      "defaultBranch": "master",
+      "note": "勿用 664c6f4965eceb14db2b9ba1（测试环境构建，已删除残影）；api 二方包发布用 65e06685dc6f756a2dc03116"
+    },
+    "deploy": {
+      "test": {
+        "workloadId": "zulin-iot-platform-3995342610",
+        "workloadName": "【测试】iot-platform",
+        "deployType": "normal"
+      }
+    }
   },
   "zulin-iot-platform:prod": {
     "index": "index-8172-7302*",
