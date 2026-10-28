@@ -400,8 +400,9 @@ async function main() {
         if (json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
-          const nameA = res.userA?.name || targetId;
-          const nameB = res.userB?.name || targetId2;
+          const isSameName = Boolean(res.userA?.name && res.userA?.name === res.userB?.name);
+          const nameA = isSameName ? `${res.userA.name} (${res.userA.ucid || 'A'})` : (res.userA?.name || targetId);
+          const nameB = isSameName ? `${res.userB.name} (${res.userB.ucid || 'B'})` : (res.userB?.name || targetId2);
 
           console.log(`\n🔍 人员权限差异对比报告 (${envTag} | 系统: ${appId}): ${nameA} vs ${nameB}`);
           console.log(`\n📊 对比概览:`);
@@ -475,12 +476,8 @@ async function main() {
 
           if (filteredConstraintDiffs.length > 0) {
             console.log(`\n📐 数据约束差异明细 (Tier 3 下探):`);
-            const labelA = (res.userA?.name && res.userA?.name === res.userB?.name)
-              ? `${res.userA.name} (${res.userA.ucid || 'A'}) 范围`
-              : `${res.userA?.name || nameA} 范围`;
-            const labelB = (res.userA?.name && res.userA?.name === res.userB?.name)
-              ? `${res.userB.name} (${res.userB.ucid || 'B'}) 范围`
-              : `${res.userB?.name || nameB} 范围`;
+            const labelA = `${nameA} 范围`;
+            const labelB = `${nameB} 范围`;
 
             console.table(filteredConstraintDiffs.map(d => ({
               '权限点 Code': d.permId,
