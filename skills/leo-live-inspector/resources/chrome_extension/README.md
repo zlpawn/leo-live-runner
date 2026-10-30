@@ -9,15 +9,21 @@ A Chrome/Edge/Brave extension that exports cookies from the browser to the Shrim
 3. Open `chrome://extensions`.
 4. Enable "Developer mode" (top right).
 5. Click "Load unpacked" and select the unzipped folder.
-6. After upgrading to 1.3.0+, click **Reload** on the extension card.
+6. After upgrading to 1.3.1+, click **Reload** on the extension card.
 
 ---
 
-本仓库随 skill 分发的扩展位于 `skills/leo-live-inspector/resources/chrome_extension`，直接从该目录加载。修改后在扩展管理页重新加载；本仓库无需执行外部项目的 `sync:extension`。
+> [!IMPORTANT]
+> **📢 AI Agent 与开发者同步规约（Single Source of Truth）**：
+> 1. 本目录 (`extensions/leo-cookie-txt-locally`) 为 Chrome 扩展的**主源目录**。
+> 2. 为保证 `lib/skills/leo-live-inspector` 与外部独立仓库 `leo-live-runner/skills/leo-live-inspector` 具备独立分发与便携性，其 `resources/chrome_extension` 目录下维护了本扩展的自包含副本。
+> 3. **任何修改在合并至本主源目录后，请执行同步脚本，确保将最新改动同步到所有副本目录！**
+
+---
 
 ## 自动获取 skill 凭据（credential_relay）
 
-安装或更新至 1.3.0 并重新加载扩展，在同一个普通 Profile 登录业务网站后，直接运行 skill 命令。无需手动复制、导入配对文件或启动网关。
+安装或更新至 1.3.1 并重新加载扩展，在同一个普通 Profile 登录业务网站后，直接运行 skill 命令。无需手动复制、导入配对文件或启动网关。
 
 - 缓存可用时不启动 relay；凭据缺失或明确登录失败时，业务进程临时监听 `127.0.0.1:19528`。
 - 扩展启动及约每 60 秒探测一次。只有领取到任务才调用 `chrome.cookies.getAll({url})`，按可选 `names` 筛选后回传。
@@ -28,6 +34,8 @@ A Chrome/Edge/Brave extension that exports cookies from the browser to the Shrim
 - 业务脚本只读验证成功后更新原有缓存，构建、发布等写请求不自动重放。手动复制/导出功能保留。
 
 新通道独立于以下既有网关接口。旧网关离线时同样由每分钟 alarm 唤醒探测。
+
+---
 
 ## Usage
 
@@ -45,7 +53,7 @@ A Chrome/Edge/Brave extension that exports cookies from the browser to the Shrim
    ```
 4. On `status=succeeded`, use `result.file_path` with yt-dlp.
 
-While the gateway is online, the extension uses its existing command polling loop; offline retries resume on the minute alarm. The gateway page does not need to stay open.
+The extension claims tasks every ~2s while registered. The gateway page does not need to stay open.
 
 ## Agent task isolation and stable targets
 

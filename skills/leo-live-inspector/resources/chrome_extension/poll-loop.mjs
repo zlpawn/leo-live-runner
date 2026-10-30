@@ -30,7 +30,7 @@ export function createMultiUrlPollLoop({
           continue;
         }
         if (!polled?.online) {
-          break; // Offline: the background alarm will retry, without keeping a worker alive.
+          await sleep(offlineBackoffMs);
         }
       }
     } finally {

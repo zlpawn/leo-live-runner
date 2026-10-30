@@ -36,3 +36,4 @@ temp/
 
 ### AI Skills ###
 skills/**/node_modules/
+.superpowers/
