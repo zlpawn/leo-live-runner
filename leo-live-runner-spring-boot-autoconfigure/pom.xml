@@ -7,11 +7,17 @@
     <parent>
         <groupId>io.github.zlpawn</groupId>
         <artifactId>leo-live-runner</artifactId>
-        <version>1.0.4</version>
+        <version>1.0.5</version>
     </parent>
 
     <artifactId>leo-live-runner-spring-boot-autoconfigure</artifactId>
     <packaging>jar</packaging>
+
+    <properties>
+        <!-- Spring 6 / jakarta 需 Java 17 编译（core 模块仍为 Java 8） -->
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+    </properties>
 
     <name>leo-live-runner-spring-boot-autoconfigure</name>
     <description>Auto-configuration module for Spring Boot 2.x and 3.x</description>
@@ -35,21 +41,21 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
-            <version>5.3.31</version>
+            <version>6.1.14</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-webmvc</artifactId>
-            <version>5.3.31</version>
+            <version>6.1.14</version>
             <scope>provided</scope>
         </dependency>
 
         <!-- Servlet API (provided by host application container) -->
         <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <version>4.0.1</version>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>6.0.0</version>
             <scope>provided</scope>
         </dependency>
 
@@ -57,14 +63,14 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-tx</artifactId>
-            <version>5.3.31</version>
+            <version>6.1.14</version>
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-aop</artifactId>
-            <version>5.3.31</version>
+            <version>6.1.14</version>
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
