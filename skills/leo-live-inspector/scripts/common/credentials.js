@@ -136,6 +136,38 @@ export function saveApolloTestCookie(cookieStr) {
   });
 }
 
+/** Apollo 生产/预发环境 Portal Cookie */
+export function loadApolloProdCookie() {
+  return loadCookie({
+    envVar: 'APOLLO_PROD_COOKIE',
+    jsonFileName: 'apollo_cookie.json',
+    targetUrl: 'http://apollo.portal.life.ke.com/',
+    downloadCandidates: [
+      'cookies-apollo.portal.life.ke.com.txt',
+      'cookies-apollo.txt'
+    ]
+  });
+}
+
+export function saveApolloProdCookie(cookieStr) {
+  return saveCookie({
+    jsonFileName: 'apollo_cookie.json',
+    cookieStr
+  });
+}
+
+/** Apollo 统一多环境 Cookie 加载入口 */
+export function loadApolloCookie({ env = 'prod' } = {}) {
+  const isTest = env.toLowerCase() === 'test';
+  return isTest ? loadApolloTestCookie() : loadApolloProdCookie();
+}
+
+/** Apollo 统一多环境 Cookie 保存入口 */
+export function saveApolloCookie({ env = 'prod', cookieStr } = {}) {
+  const isTest = env.toLowerCase() === 'test';
+  return isTest ? saveApolloTestCookie(cookieStr) : saveApolloProdCookie(cookieStr);
+}
+
 /** Luke 权限中心 Cookie (支持测试环境与线上生产环境) */
 export function loadLukeCookie({ env = 'test' } = {}) {
   const isProd = env === 'prod' || env === 'production';

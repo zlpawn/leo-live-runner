@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)。支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -8,7 +8,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 本 Skill 专门指导 AI 执行线上生产环境与测试环境的 **全场景数据观测、诊断与配置协同治理（Observe, Diagnose & Configure）**：
 1. **⚡ FAST / Kibana 毫秒级日志检索**：直连内网 ES 网关，快速捞取微服务报错日志、接口真实请求入参 (`request_in`) 与响应结果 (`request_out`)；
 2. **📡 Kafka 消息无损只读探查与测试环境模拟投递**：以 Topic 为核心资产，支持【零 Commit、零 Rebalance】秒级拉取线上/测试最新消息，支持分区水位排查与关键词过滤；测试环境支持利用 Sample 模板快速灌入数据模拟上游；
-3. **⚙️ Apollo 配置中心线上线下双轨体系（探查、修改与变更参谋）**：直连 Apollo ConfigService 秒级读取全量实时配置；【测试环境】支持热修改发布与两阶段 Diff 确认闭环；【生产环境】坚守“零直写原则”，自动进入变更参谋模式，生成高可读性《线上变更建议单》与 Portal 官方直达链接；
+3. **⚙️ Apollo 配置中心线上线下双轨体系（探查、发布轨迹、修改与变更参谋）**：直连 Apollo ConfigService 秒级读取全量实时配置；支持**任意配置项跨版本发布轨迹与时序变迁追溯 (`scripts/apollo_history.js`)**，覆盖线上生产 (PROD)、线下测试 (TEST) 与预发 (PREVIEW，自适应集群探测与实时值对照)；【测试环境】支持热修改发布与两阶段 Diff 确认闭环；【生产环境】坚守“零直写原则”，自动进入变更参谋模式，生成高可读性《线上变更建议单》与 Portal 官方直达链接；
 4. **🧵 TraceId 全链路时序还原**：跨微服务追溯完整请求生命周期，自动提炼调用步骤并绘制 **Mermaid 时序交互图**；
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析；
@@ -68,6 +68,9 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **“查下【预发环境】saas 的超时配置 timeout”** | `node scripts/apollo_query.js saas -e preview timeout` | 预发环境 (prev.config.apollo.ke.com) 超时参数明细 |
 | **“看下 iot-platform 上的 lockAuth 开关或白名单”** | `node scripts/apollo_query.js iot-platform lockAuth` | 匹配到的业务开关、白名单及解析后的格式化 JSON |
 | **“查下 Apollo application.properties 里的 weitang 配置”** | `node scripts/apollo_query.js iot-platform application.properties weitang` | 指定命名空间下的精准配置项 |
+| **“查下线上 iot 某个配置项的发布轨迹 / 谁改的”** | `node scripts/apollo_history.js iot <key>` | 线上生产环境历次 Release 逐版本比对，输出变更人、时间、发布说明与新旧值 Diff |
+| **“查下【测试环境】liveRunner 白名单的修改历史”** | `node scripts/apollo_history.js iot liveRunner.access.ucIdWhitelist -e test` | 测试环境发布版本生命周期回溯与 Diff 提取 |
+| **“查下【预发环境】rentButton 的发布轨迹”** | `node scripts/apollo_history.js iot rentButton -e preview` | 预发环境自适应探测 preview 专有集群，无独立集群则映射线上轨迹并对照预发实时生效值 |
 | **“把测试环境 iot 的 liveRunner.access.ucIdWhitelist 改成 [31534062,12]”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/apollo_modify.js iot liveRunner.access.ucIdWhitelist "[31534062,12]"` | 向用户展示【变更前 vs 变更后】Diff 确认单、锁定 Namespace 与发布属性（业务开关 SWITCH），**停下等待用户明确确认** |
 | **用户明确确认（“确认修改”、“发布吧”、“同意更改”）** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/apollo_modify.js iot liveRunner.access.ucIdWhitelist "[31534062,12]" --confirm` | 写入 Portal、发布版本并直连 ConfigService 验证客户端热生效结果 |
 | **“把测试环境 saas 的 timeout 改成 5000”** | `node scripts/apollo_modify.js saas timeout 5000` (先展示 Diff 确认单) | 自动嗅探多 Namespace，锁定所属 namespace，生成 Diff 待确认 |
@@ -286,6 +289,35 @@ AI 后台执行 `node scripts/apollo_modify.js <appId|alias> [namespace] <key> <
    ```
 4. **引导负责人人工审批发布**：
    指引用户点击直达链接，登录个人合规账号，直接在目标页面完成修改、走正规变更审批与发布流程。
+
+---
+
+### 2.4 Apollo 单项配置发布轨迹与时序变迁追溯 (`scripts/apollo_history.js`)
+AI 后台执行 `node scripts/apollo_history.js <appId|alias> [namespace] <key> [options]`：
+
+| 参数/选项 | 简写 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `<appId\|alias>` | - | 必填 | 目标微服务唯一 ID 或业务别名 (如 `iot`, `saas`, `platform`) |
+| `[namespace]` | - | 自动嗅探 | 命名空间。未指定时全自动扫描应用所有 Namespace 定位该 Key |
+| `<key>` | - | 必填 | 待追踪的配置项键名 (如 `bindWhiteList`, `rentButton`, `timeout`) |
+| `--env` | `-e` | `prod` | **目标环境**: `prod` (生产, 默认), `test` (测试), `preview` (预发) |
+| `--cluster` | `-c` | `default` | 集群名称 (预发环境自动探测 `preview` / `prev` 集群，未配置则优雅回退至 `default`) |
+| `--depth` | `-n` | `50` | 最大扫描历史版本数量 (支持 10~200，便于回溯半年或更早版本) |
+| `--page-size` | `-s` | `20` | 单次分页批量抓取条数 (5~50) |
+| `--all` | - | `false` | 输出扫描到的所有发布版本 (默认仅输出该 Key 发生变更的节点) |
+| `--json` | - | `false` | 以结构化 JSON 格式输出历史轨迹 |
+| `--cookie` | - | 动态读取 | 临时覆盖 Portal 请求 Cookie (默认自动从中继扩展获取) |
+| `--set-cookie` | - | - | 手动保存更新本地 Cookie 缓存 |
+
+#### 🔍 核心特性与处理逻辑
+1. **逐版本时序状态机 Diff**：
+   - 循环拉取历次 Release 快照，对目标 Key 在相邻两次发布之间的状态变化进行萃取；
+   - 明确标注变更类型：**🟢 新增 (CREATE)**、**🟡 修改 (MODIFY)**、**🔴 删除 (DELETE)** 与 **⚪ 基准快照 (BASELINE)**；
+   - 输出完整的 **发布版本号 (`releaseTitle`)**、**发布时间 (`releaseTimeFormatted`)**、**操作人员工号与姓名 (`operatorDisplayName`)** 与 **发布说明 (`releaseComment`)**。
+2. **预发环境 (PREVIEW) 自适应与闭环核验**：
+   - 当指定 `-e preview` 时，工具会自动探测生产控制台下是否存在 `preview` 或 `prev` 专有集群；
+   - 若微服务预发无独立集群（直接共享线上配置），自动给出说明并呈现线上发布轨迹；
+   - **闭环生效校验**：无论任何环境，工具均会自动连通该环境专属 ConfigService（如 `http://prev.config.apollo.ke.com`）核验当前客户端真实生效值，确保版本轨迹与生效状态相互印证。
 
 ---
 
