@@ -282,5 +282,30 @@
         "deployType": "normal"
       }
     }
+  },
+  "zulin-iot-log": {
+    "index": "index-8464-7683*",
+    "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "zulin-iot-log"
+  },
+  "zulin-iot-log:prod": {
+    "index": "index-8464-7683*",
+    "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "zulin-iot-log"
+  },
+  "iot-log": {
+    "index": "index-8464-7683*",
+    "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "zulin-iot-log"
+  },
+  "iot-log:prod": {
+    "index": "index-8464-7683*",
+    "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "zulin-iot-log"
+  },
+  "贝家IOT日志中心": {
+    "index": "index-8464-7683*",
+    "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "zulin-iot-log"
   }
 }

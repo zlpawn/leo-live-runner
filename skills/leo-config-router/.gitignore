@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+.env
+
+# Data & spreadsheets
+*.xlsx
+*.xls
+*.csv
+
+# Logs & temp files
+*.log
+.tmp*
+.cache/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

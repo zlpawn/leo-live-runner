@@ -1,0 +1,92 @@
+id: sm_lock
+name: "服务管家门锁权限月度配置 SOP"
+description: "处理全国管家门锁免审批白名单 (Apollo)、全国数据权限刷新 (Backdoor API) 以及 Luke 角色工号编排"
+
+triggers:
+  - "门锁权限"
+  - "管家门锁"
+  - "门锁白名单"
+  - "通宵班门锁"
+  - "sm_lock"
+  - "lock_perm"
+
+input:
+  format: "excel"
+  sheet_detection: "active_or_visible"
+  sanitizer: "beike_ucid_converter"
+  fields:
+    key_col: ["员工系统号", "工号", "ucid", "eid"]
+    name_col: ["姓名", "员工姓名", "name"]
+    role_col: ["权限", "角色", "岗位权限", "role"]
+    group_col: ["七级组织", "城市", "服务组", "组织", "group"]
+
+grouping:
+  whitelist_candidates:
+    match_roles: ["超级管理员", "通宵班", "通宵班权限", "通宵权限"]
+  super_admins:
+    match_roles: ["超级管理员"]
+  night_shifts:
+    match_roles: ["通宵班", "通宵班权限", "通宵权限"]
+  degraded_roles:
+    match_roles: ["普通一线权限", "一线普通权限"]
+
+pipeline:
+  - step_id: 1
+    name: "全国数据权限刷新"
+    type: "http_batch_api"
+    risk_level: "low"
+    required: true
+    description: "调用后端后门接口，为当期全量管家开通 needNationData=1 全国数据权限"
+    endpoint: "http://iot.beijia.ke.com/backdoor/permission/loadExistScopeAndSourceTypePermission"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    batch_size: 1000
+    target_data: "all_sheet_ucids"
+    payload_template:
+      ucids: "${target_data}"
+      needNationData: 1
+
+  - step_id: 2
+    name: "Apollo 免审批白名单清洗与替换"
+    type: "apollo_config"
+    risk_level: "medium"
+    required: true
+    description: "更新 zulin-iot-platform 的 service.user.send.password.auth.config 配置"
+    app_id: "zulin-iot-platform"
+    key: "service.user.send.password.auth.config"
+    query_url: "http://prod.config.apollo.ke.com/configfiles/json/zulin-iot-platform/default/application"
+    format: "json_array"
+    diff_strategy: "full_clean_recommended"
+    target_data: "whitelist_clean_target_ucids"
+    export_dir: "~/Downloads"
+    export_filename: "${sheet_name}_Apollo全量清洗免审批白名单_${count}人_推荐.json"
+
+  - step_id: 3
+    name: "Luke 权限中心角色工号名单导出"
+    type: "luke_export"
+    risk_level: "high"
+    required: true
+    description: "导出待绑定工号至本地文本文件，供业务人工在 Luke 控制台批量录入 (严禁自动化写入)"
+    roles:
+      - role_id: "anjiah5:lockSuperManager"
+        role_name: "服务管家门锁超级管理员"
+        target_data: "new_super_admin_eids"
+        export_filename: "${sheet_name}_Luke_服务管家门锁超级管理员_新增工号_${count}人.txt"
+      - role_id: "anjia:lock:serviceManager"
+        role_name: "一线服务管家"
+        target_data: "new_night_shift_eids"
+        export_filename: "${sheet_name}_Luke_一线服务管家_新增通宵班工号_${count}人.txt"
+
+  - step_id: 4
+    name: "线上生产环境双向闭环核验"
+    type: "live_verification"
+    risk_level: "safe"
+    required: true
+    description: "委托 leo-live-inspector 核查 Apollo 生效人数与 Luke 线上角色绑定状态"
+    inspector_skill: "leo-live-inspector"
+    checks:
+      - target: "apollo"
+        expected_count: "${whitelist_clean_count}"
+      - target: "luke"
+        check_roles: ["anjiah5:lockSuperManager", "anjia:lock:serviceManager"]
