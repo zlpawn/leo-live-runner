@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)；(8) 通用 Chrome 浏览器操作：页面导航、元素交互、DOM 快照、截图与网络抓包。支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、ES 搜索平台与索引全生命周期治理（索引结构 Schema 采样推断、多维检索、测试环境安全 CRUD 预审与生产环境物理只读拦截）、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) ES 搜索平台双环境治理与索引探查（免配置自发现、Schema 采样推断、测试环境 CRUD 预审与生产物理只读拦截）；(6) Dinsight 自然语言大数据探查；(7) CI/CD 构建与测试环境部署闭环；(8) Luke 权限中心双环境治理；(9) 通用 Chrome 浏览器操作。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -15,6 +15,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 7. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线；
 8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员画像/双人三层 Diff）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；支持**单人权限全景画像 (`user <ucid|name>`)** 与 **双人三层深度对比 (`diff-user <user1> <user2>`)**，具备约束自动取并集计算、角色/权限点/数据约束范围三层渐进式对比能力，直接输出角色 Code、权限 Code、约束 Code、关联 API 路径与 Luke Portal 控制台直达链接；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验；
 9. **🌐 通用浏览器操作**：业务脚本覆盖不到时，通过随附 CLI（`scripts/cli/index.mjs`）操作用户真实的 Chrome，用于查看页面、截图和抓包，线上一律只读（见[第 8 节](#-8-通用浏览器操作)）。
+10. **🔎 ES 搜索平台双环境治理与索引探查（查询、Schema 反推、测试 CRUD）**：免配置自动探测 Apollo 与多工程代码仓库获取地址与 Token（`scripts/es_query.js` 与 `scripts/es_modify.js`）；支持索引结构 (Schema) 采样推断与多维度数据检索；【测试环境】支持安全 CRUD（含 Pre-flight Diff 预审机制与写入回查校验）；【生产环境】纯正则 `TEST_PATTERNS` 判定，非测试环境严格物理死锁只读保护，杜绝误操作。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js`、`scripts/feci_deploy.js`、`scripts/luke_query.js` 与 `scripts/luke_modify.js` 等）是 AI 专用的后台探查、交付与运维工具**。
@@ -118,6 +119,15 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **“把权限点 anjia:storage:order 分配给库存管理员角色”** | **阶段 1 (AI 强制 Pre-flight 探查)**：<br>`node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --api "/anjia/custom/api"` | 计算角色权限树 Diff 与受影响人员评估，**停下等待用户确认** |
 | **用户明确确认角色授权** | **阶段 2 (用户确认后正式发布)**：<br>`node scripts/luke_modify.js grant-role-perm anjiah5:inventoryAdmin anjia:storage:order:afterSaleOrder --confirm --api "/anjia/custom/api"` | 正式写入角色授权并生效 |
 | **“给员工张林 (30560224) 绑定库存管理员角色”** | `node scripts/luke_modify.js bind-role-user anjiah5:inventoryAdmin 1000000030560224` | 直接调用人员绑定接口 |
+| **“看下 iot-platform 支持哪些 ES 索引 / 搜索服务”** | `node scripts/es_query.js iot-platform --list-services -e prod` | 列出微服务下全量业务索引、Service ID 与网关配置 |
+| **“查下 iot-platform 门锁在 ES 里的索引结构 / Schema / 字段”** | `node scripts/es_query.js iot-platform lock --schema -e prod` | 采样推断索引全量字段名、类型、可空性与真实示例值 |
+| **“查下线上 iot-platform 门锁最新 10 条 ES 数据”** | `node scripts/es_query.js iot-platform lock -n 10 -e prod` | 格式化文档关键字段表格与首条记录全量快照 (默认 PROD 只读) |
+| **“在测试环境查询 iot-platform 门锁 ES 数据”** | `node scripts/es_query.js iot-platform lock -n 5 -e test` | 自动直连测试环境搜索网关拉取最新测试数据 |
+| **“按关键词或条件查 ES 数据”** | `node scripts/es_query.js iot-platform lock -q "合肥" --filter "cityCode:340100" -n 5` | 支持全文 query 检索与键值对过滤 |
+| **“在测试环境把门锁 10001 的电量在 ES 里改成 95”** | **阶段 1 (AI 强制 Pre-flight 预审)**：<br>`node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 95}' -e test` | 展示变更前现有值 vs 拟写入新值 Diff 对比单，**停下等待用户确认** |
+| **用户明确确认 ES 修改（“确认更新”、“提交写入”）** | **阶段 2 (用户确认后正式写入并回查)**：<br>`node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 95}' -e test --confirm` | 提交写网关并自动回查验证最新生效状态 |
+| **“在测试环境删除 ES 记录 10001”** | `node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -e test --confirm` | 提交删除指令并校验文档清除结果 |
+| **“在线上/生产环境修改或删除 ES 数据”** | **执行风控红线拦截 (物理阻断直写)** | **严禁自动化线上写入！** 触发 `assertWritePermitted` 拦截，提示线上仅支持只读查询 |
 
 ---
 
@@ -795,6 +805,58 @@ node scripts/luke_query.js diff-user <user1> <user2> [--app <appCode>] [-e test|
    - **缺失角色时**：明确告知缺少哪个角色 Code，并指引用户前往 Luke 申请该角色，或提供管理员绑定命令：`node scripts/luke_modify.js bind-role-user <roleId> <ucid>`；
    - **角色具备但缺少数据约束时**：明确指出缺失的城市代码或接口范围，指引在角色授权配置中通过 `grant-role-perm` 扩充对应约束取值；
    - **针对 403 接口鉴权拦截排查**：直接反查报错接口 URL 是否挂载在对应权限点下，明确指出是角色未绑定、接口未加权限点、还是限定约束（如 cityCode）未包含当前操作上下文。
+
+---
+
+## 🔎 10. ES 搜索平台探查与测试环境安全 CRUD (scripts/es_query.js & scripts/es_modify.js)
+
+针对微服务接入的贝壳搜索平台（Search Platform / Matrix Search），提供双环境治理、索引结构探查与安全数据运维能力。
+
+### 10.1 核心设计与三级动态发现机制
+使用者调用时**无需手动提供网关地址与 Token**，系统按以下顺序全自动动态推导并落盘缓存：
+1. **Tier 1: Apollo 配置中心秒级直连**：直连内网开放的 ConfigService（生产 `prod.config.apollo.ke.com`，测试 `test.config.apollo.ke.com`），毫秒级提取目标 `appId` 的 `searchPlatProperties`（含全量业务 serviceId、读写网关与 Token）；
+2. **Tier 2: 本地多工程仓库智能嗅探**：通过 `local_repo_scanner.js` 纯动态扫描多候选根目录池（当前目录、Git 根目录、兄弟工程目录、主目录工程文件夹与自定义环境变量），解析 `application-*.yml` 提取配置；
+3. **Tier 3: 本地持久化缓存**：已发现的配置沉淀至 `~/.shrimp/skills/live-inspector/es_services_cache.json`，供离线/下次 O(1) 瞬时复用。
+
+### 10.2 纯正则环境分类与生产安全铁律
+- **纯规则判决 (`TEST_PATTERNS`)**：放弃维护脆弱的域名白名单，严格依靠测试环境语义正则（涵盖 `.test.ke.com`、`-test.`、`sit`、`qa`、`dev` 等）；
+- **疑罪从严，生产物理死锁**：任何未匹配到 `TEST_PATTERNS` 的 URL 或指定 `-e prod` 的请求，**一律判定为生产环境，底层代码彻底阻断新增/修改/删除等写操作**；
+- **测试环境两阶段预审**：测试环境修改强制要求 Pre-flight 试运行（打印变更前现有值 vs 拟写入新值 Diff 对比单），用户明确确认或追加 `--confirm` 后方可正式写入。
+
+### 10.3 常用 CLI 命令速查
+
+#### 1. 索引清单与结构探查
+```bash
+# 列出微服务下所有已配置的 ES 业务索引
+node scripts/es_query.js iot-platform --list-services -e prod
+
+# 探查并推断索引全量字段、类型、可空性与真实示例值 (Schema / Mapping)
+node scripts/es_query.js iot-platform lock --schema -e prod
+```
+
+#### 2. 多维度数据检索
+```bash
+# 查询最新 10 条线上数据 (格式化表格 + 首条全量快照)
+node scripts/es_query.js iot-platform lock -n 10 -e prod
+
+# 测试环境数据检索
+node scripts/es_query.js iot-platform lock -n 5 -e test
+
+# 带关键词或字段过滤
+node scripts/es_query.js iot-platform lock -q "合肥" --filter "cityCode:340100" -n 5
+```
+
+#### 3. 测试环境数据 CRUD (两阶段确认)
+```bash
+# 阶段 1: 更新部分字段 (Dry-Run 预审模式，展示 Diff)
+node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 95}' -e test
+
+# 阶段 2: 确认无误后正式提交写入并自动回查验证
+node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 95}' -e test --confirm
+
+# 测试环境删除文档
+node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -e test --confirm
+```
 
 ---
 
