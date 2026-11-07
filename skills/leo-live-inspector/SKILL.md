@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)。支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) Dinsight 自然语言大数据探查；(6) CI/CD 构建与测试环境部署闭环；(7) Luke 权限中心双环境（测试 test-luke.ke.com 与线上 luke.ke.com）治理：约束、权限点、角色与人员探查与两阶段风控预审变更，员工单人权限画像 (user) 与双人三层深度对比 (diff-user，支持数据约束自动取并集计算、角色/权限/约束范围三层递进 Diff、直接输出完整编码、API 路径与 Luke Portal 控制台直达链接)；(8) 通用 Chrome 浏览器操作：页面导航、元素交互、DOM 快照、截图与网络抓包。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -13,7 +13,8 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 5. **🧭 索引与资产自学习（双层持久化）**：初次查询新服务或新 Topic 自动就地嗅探或直连探针提取，统一沉淀至 `~/.shrimp/skills/live-inspector/`；
 6. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析；
 7. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线；
-8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员画像/双人三层 Diff）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；支持**单人权限全景画像 (`user <ucid|name>`)** 与 **双人三层深度对比 (`diff-user <user1> <user2>`)**，具备约束自动取并集计算、角色/权限点/数据约束范围三层渐进式对比能力，直接输出角色 Code、权限 Code、约束 Code、关联 API 路径与 Luke Portal 控制台直达链接；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验。
+8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员画像/双人三层 Diff）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；支持**单人权限全景画像 (`user <ucid|name>`)** 与 **双人三层深度对比 (`diff-user <user1> <user2>`)**，具备约束自动取并集计算、角色/权限点/数据约束范围三层渐进式对比能力，直接输出角色 Code、权限 Code、约束 Code、关联 API 路径与 Luke Portal 控制台直达链接；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验；
+9. **🌐 通用浏览器操作**：业务脚本覆盖不到时，通过随附 CLI（`scripts/cli/index.mjs`）操作用户真实的 Chrome，用于查看页面、截图和抓包，线上一律只读（见[第 8 节](#-8-通用浏览器操作)）。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
 > - **底层脚本（`scripts/fast_query.js`、`scripts/apollo_modify.js`、`scripts/ci_deploy.js`、`scripts/feci_deploy.js`、`scripts/luke_query.js` 与 `scripts/luke_modify.js` 等）是 AI 专用的后台探查、交付与运维工具**。
@@ -26,8 +27,8 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 > - **切勿在回复中输出“请您手动在终端运行 node scripts/...”等推卸给用户的言论。**
 > 
 > 🚨 **【核心鉴权铁律：零外部工具依赖，严禁使用 opencli / ego-browser / 外部自动化浏览器】**
-> - **自包含内生闭环**：本 Skill 拥有 100% 独立内生的凭据获取架构，所有登录态仅通过内部脚本与随附 Chrome 扩展（`Leo cookie.txt Locally`）在本地 `127.0.0.1:19528` 通信完成获取与自动落盘；
-> - **严禁调用任何外部浏览器驱动工具**：绝对禁止调用 `opencli`（如 `opencli browser ...`）、`ego-browser`、`puppeteer`、`playwright` 等工具去操作或驱动浏览器获取登录态！外部工具具有强侵入性、易触发公司 SSO 风控拦截且破坏用户正常办公体验；
+> - **自包含内生闭环**：本 Skill 拥有 100% 独立内生的凭据获取架构，所有登录态仅通过内部脚本与随附 Chrome 扩展（`Leo cookie.txt Locally`）经本地桥接 `127.0.0.1:19527` 通信完成获取与自动落盘；
+> - **严禁调用任何外部浏览器驱动工具**：绝对禁止调用 `opencli`（如 `opencli browser ...`）、`ego-browser`、`puppeteer`、`playwright` 等工具去操作或驱动浏览器获取登录态！外部工具具有强侵入性、易触发公司 SSO 风控拦截且破坏用户正常办公体验。随附的 `scripts/cli/index.mjs` 是本 Skill 的内部工具，不在此列，其使用边界见[第 8 节](#-8-通用浏览器操作)；
 > - **极简操作流程**：任何涉及凭据获取的场景，AI 直接运行对应的业务脚本即可（底层自动触发 `credential_relay` 会话并完成中继），或在需要单点校验连通性时运行 `node scripts/credential_relay.js <targetUrl>`；若扩展超时或未登录，只需温和提示用户在日常 Chrome 中登录目标网站后重试。
 
 ---
@@ -529,16 +530,16 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 
 ## 🔌 7. 自动获取 Token/Cookie
 
-默认复用现有缓存；仅在凭据缺失或明确登录失败时，按需启动 `credential_relay`，从已登录浏览器自动获取一次。新凭据经只读接口验证成功后才写缓存。普通 403、500、超时不会触发刷新；显式 `--token`、`--cookie` 或环境变量优先，不自动切换账号。构建、发布等写请求不会自动重放。
+默认复用现有缓存；仅在凭据缺失或明确登录失败时，通过 `credential_relay` 从已登录浏览器自动获取一次。新凭据经只读接口验证成功后才写缓存。普通 403、500、超时不会触发刷新；显式 `--token`、`--cookie` 或环境变量优先，不自动切换账号。构建、发布等写请求不会自动重放。
 
 ### 安装与使用
 
 1. 在 Chrome 打开 `chrome://extensions/`，开启开发者模式，选择【加载已解压的扩展程序】。
 2. 选择当前 skill 下的 `resources/chrome_extension`。AI 应提供当前生效的绝对路径；macOS 可用 `Cmd + Shift + G` 输入路径，Windows 可在文件选择器地址栏输入。
-3. 已安装旧版时，将扩展更新到本目录的 **1.3.0** 并点击【重新加载】。
+3. 已安装旧版时，将扩展更新到本目录的 **1.3.13** 或更高版本并点击【重新加载】。版本过旧时脚本会报 `EXTENSION_OUTDATED`，并提示重新加载。
 4. 在同一浏览器普通 Profile 登录目标网站，正常执行 skill 命令即可，无需复制或配对文件。
 
-插件约每 60 秒探测本机 `127.0.0.1:19528`；没有任务时不读 Cookie。业务进程只在等待凭据时监听，任务仅存内存，拿到结果、超时或取消后关闭。默认最长等待 180 秒；系统休眠可能延迟探测。超时请确认浏览器和扩展已开启、目标网站已登录，然后重试。
+需要凭据时，业务进程按需拉起本机 `127.0.0.1:19527` 的桥接，向扩展发送读取命令，通常很快返回；没有命令时不读 Cookie。桥接空闲 10 分钟后自动退出。默认最长等待 180 秒，等待期间打开 Chrome 也能继续。结果会在扩展内存的命令队列里保留最多 5 分钟，不落盘。超时请确认浏览器和扩展已开启、目标网站已登录，然后重试。
 
 ### 平台范围
 
@@ -554,7 +555,7 @@ AI 后台执行 `node scripts/ci_deploy.js [serviceId] [options]`：
 | Paoding 测试日志 | 匿名优先；明确鉴权失败后尝试缓存及浏览器 |
 | FAST / Apollo ConfigService | 沿用现有访问流程，不新增强制凭据要求 |
 
-第一版仅支持浏览器 Cookie，包括 HttpOnly Cookie 和存于 Cookie 中的 Token；不读取 localStorage、sessionStorage 或请求头 Token。仅支持同机单个普通 Profile，不支持隐身、分区 Cookie 或远程浏览器。信任本机程序，无配对密钥；端口被其他进程占用时返回 `RELAY_BUSY`，稍后重试。
+第一版仅支持浏览器 Cookie，包括 HttpOnly Cookie 和存于 Cookie 中的 Token；不读取 localStorage、sessionStorage 或请求头 Token。仅支持同机单个普通 Profile，不支持隐身、分区 Cookie 或远程浏览器。信任本机程序，无配对密钥；`19527` 被其他程序占用时返回 `RELAY_BUSY`，稍后重试。
 
 ### 独立中继工具 (`scripts/credential_relay.js`)
 
@@ -570,6 +571,23 @@ node scripts/credential_relay.js https://cloud.intra.ke.com --json
 ### 手动兜底
 
 设置 `LEO_INSPECTOR_BROWSER_CREDENTIALS=off` 可关闭自动获取，保留已有缓存和手动设置参数。不能安装插件时，可在浏览器开发者工具 Application → Cookies 复制目标凭据，或使用插件导出 Cookie，再调用业务脚本的 `--set-token` / `--set-cookie`。Shipwright 使用 `ci_deploy.js --set-shipwright-cookie`。不要在回复、日志或代码中记录凭据值。
+
+---
+
+## 🌐 8. 通用浏览器操作
+
+业务脚本覆盖不到时，才用随附 CLI 操作用户真实的 Chrome，例如查看页面状态、截图复现问题、抓接口请求。用法见[通用浏览器操作手册](references/browser-guide.md)。
+
+```bash
+node <skillDir>/scripts/cli/index.mjs state
+node <skillDir>/scripts/cli/index.mjs screenshot --out page.png
+```
+
+> 🚨 **【线上写操作红线：网页操作不能绕过风控】**
+> - **线上一律只读**：严禁用 `click`、`fill`、`press`、`upload`、`eval` 在线上 Apollo Portal、线上 Luke、服务云及任何生产发布平台页面提交修改、发布、删除或部署。线上变更仍走参谋模式，由负责人亲自操作。
+> - **测试环境同样不能绕过确认**：Apollo、Luke 的修改必须走业务脚本的两阶段流程，不得用网页操作代替 `--confirm`。
+> - **这是行为规则，代码不会拦截**：执行前先核对当前页面的域名和环境，无法确认环境时按线上处理。
+> - **Cookie 不回显**：业务脚本会自动获取凭据，不需要手动导出。确实需要时用 `cookies --url <URL> --out <文件>` 写入文件，不得把 Cookie 值输出到回复或日志。同样不得用 `eval` 读取并回显 Cookie、Token。
 
 ---
 
@@ -787,4 +805,5 @@ node scripts/luke_query.js diff-user <user1> <user2> [--app <appCode>] [-e test|
 - **CI 构建与测试环境部署手册**：[references/ci-deploy-guide.md](references/ci-deploy-guide.md)
 - **Dinsight 自然语言查数协议**：[references/dinsight-query-guide.md](references/dinsight-query-guide.md)
 - **本地排查流程知识库操作手册**：[references/local-knowledge-guide.md](references/local-knowledge-guide.md)
+- **通用浏览器操作手册**：[references/browser-guide.md](references/browser-guide.md)
 - **Trace 全链路时序排障实战**：[examples/100_trace_and_log_query.md](examples/100_trace_and_log_query.md)

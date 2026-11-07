@@ -5,8 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
-    "sync:extension": "node -e \"import('node:fs').then(fs => { const src = 'resources/chrome_extension'; const dst = '/Users/pa/project/AI/local-ai-gateway/extensions/leo-cookie-txt-locally'; if (fs.existsSync(dst)) { fs.cpSync(src, dst, { recursive: true, force: true }); console.log('Synced from', src, 'to', dst); } })\""
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",

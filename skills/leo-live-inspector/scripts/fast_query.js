@@ -21,11 +21,14 @@ const __dirname = path.dirname(__filename);
 
 // 1. 路径与服务注册表定义
 import { loadServiceCatalog, resolveAppId } from './common/services.js';
+import { ensureBridge } from './cli/lib/cli.mjs';
+import { probePageScript } from './common/fast_probe.js';
 
 const SHRIMP_SKILLS_DIR = path.join(os.homedir(), '.shrimp', 'skills', 'live-runner');
 const USER_SERVICE_MAP_FILE = path.join(SHRIMP_SKILLS_DIR, 'service_map.json');
 
-const LANTERN_BRIDGE_URL = 'http://127.0.0.1:19527';
+const LANTERN_BRIDGE_URL = `http://127.0.0.1:${process.env.LEO_LANTERN_PORT || 19527}`;
+const PROBE_BRIDGE_START_TIMEOUT_MS = 15000;
 
 function ensureShrimpDir() {
   if (!fs.existsSync(SHRIMP_SKILLS_DIR)) {
@@ -358,60 +361,35 @@ async function probeViaLanternExtension(appCode) {
     }
   };
 
-  // 1. 检查扩展 Bridge 是否在线
+  // 1. 确保桥接已启动且扩展在线（桥接没开时自动拉起）
   try {
-    const health = await fetch(`${LANTERN_BRIDGE_URL}/health`, { signal: AbortSignal.timeout(1500) });
-    if (!health.ok) return { error: 'Lantern Bridge 离线' };
+    const health = await ensureBridge({ startTimeoutMs: PROBE_BRIDGE_START_TIMEOUT_MS });
+    if (!health.extensionOnline) return { error: 'Chrome 扩展未在线，请确认 Chrome 已打开且扩展已启用' };
   } catch (e) {
-    return { error: '未连接到 Leo Lantern 扩展 (端口 19527 离线)' };
+    return { error: `无法启动本地桥接: ${e.message}` };
   }
 
   try {
-    // 2. 启动后台静默任务并打开 fast.ke.com
-    await sendCmd('task.start', { title: 'leo-fast-probe', focus: false, sameWindow: true });
-    await sendCmd('tabs.navigate', { url: 'https://fast.ke.com/#/search', focus: false });
+    // 2. 在独立窗口启动后台任务并打开 fast.ke.com，不打扰用户当前窗口
+    await sendCmd('task.start', { title: 'leo-fast-probe', focus: false, sameWindow: false });
+    await sendCmd('tabs.goto', { url: 'https://fast.ke.com/#/search', focus: false });
     await sendCmd('dom.wait', { selector: '.el-cascader input', timeoutMs: 10000 });
 
-    // 3. 点击级联菜单并输入微服务名
-    await sendCmd('dom.click', { selector: '.el-cascader input' });
-    await new Promise(r => setTimeout(r, 400));
-    await sendCmd('dom.fill', { selector: '.el-cascader input', value: cleanApp });
-    await new Promise(r => setTimeout(r, 1500));
-
-    // 4. 在页面上下文执行 JS 选中菜单项并提取 Cluster & Index
-    const evalScript = `
-      (function() {
-        const items = [...document.querySelectorAll('.el-cascader__suggestion-item')];
-        const target = items.find(it => it.textContent.includes(${JSON.stringify(cleanApp)}));
-        if (target) target.click();
-        
-        return new Promise(resolve => {
-          setTimeout(() => {
-            const iframe = document.querySelector('iframe');
-            const src = iframe ? iframe.src : '';
-            const clusterMatch = src.match(/https:\\/\\/[^/]+/);
-            const indexMatch = src.match(/index:'([^']+)'/) || src.match(/index%3A%27([^%]+)%27/);
-            resolve({
-              cluster: clusterMatch ? clusterMatch[0] : null,
-              index: indexMatch ? indexMatch[1] : null
-            });
-          }, 2000);
-        });
-      })()
-    `;
-
-    const evalResult = await sendCmd('page.eval', { script: evalScript }, 12000);
+    // 3. 从页面服务选择器的数据里读取索引（只读，不操作页面）
+    const evalResult = await sendCmd('page.eval', { script: probePageScript(cleanApp) }, 12000);
     const learned = evalResult?.result?.evalResult;
 
-    // 5. 任务清理（关闭后台标签页）
-    await sendCmd('task.end', { closeGroup: true }).catch(() => {});
+    // 4. 任务清理（task.end 不会关标签页，要先关掉，独立窗口随最后一个标签页一起关闭）
+    await sendCmd('tabs.close');
+    await sendCmd('task.end');
 
-    if (learned && learned.index) {
+    if (learned && learned.index && learned.cluster) {
       return learned;
     }
-    return { error: '扩展探针未能从页面提取到有效索引' };
+    return { error: '扩展探针未能从页面提取到有效的集群与索引' };
   } catch (err) {
-    await sendCmd('task.end', { closeGroup: true }).catch(() => {});
+    await sendCmd('tabs.close');
+    await sendCmd('task.end');
     return { error: err.message };
   }
 }

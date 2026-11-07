@@ -259,7 +259,7 @@ async function main() {
     load: cookieGetter,
     save: cookieSaver,
     explicit: Boolean(customCookie || process.env.APOLLO_COOKIE || process.env.APOLLO_PROD_COOKIE || process.env.APOLLO_TEST_COOKIE),
-    getCookies: (opts) => getBrowserCookies({ ...opts, timeoutMs: 5000 }),
+    getCookies: (opts) => getBrowserCookies({ ...opts, timeoutMs: 30000 }),
     preflight: async ({ run }) => {
       const checkPath = `/apps/${encodeURIComponent(canonicalApp)}/envs/${portalEnv}/clusters/default/namespaces`;
       const checkUrl = `http://${portalHost}${checkPath}`;

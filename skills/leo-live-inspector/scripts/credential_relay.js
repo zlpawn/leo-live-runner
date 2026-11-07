@@ -1,9 +1,6 @@
-import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { ensureBridge, executeCommand } from './cli/lib/cli.mjs';
 
-const PORT = 19528;
-const MAX_BODY = 256 * 1024;
-let queue = Promise.resolve();
+const DEFAULT_TIMEOUT_MS = 180000;
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
 export function normalizeCredentialRequest({ url, names } = {}) {
@@ -27,118 +24,56 @@ export function cookiesToHeader(cookies) {
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
-export function getBrowserCookies(options = {}) {
-  let request;
-  try {
-    if (process.env.LEO_INSPECTOR_BROWSER_CREDENTIALS === 'off')
-      throw failure('BROWSER_CREDENTIALS_DISABLED', '浏览器自动获取已关闭');
-    request = normalizeCredentialRequest(options);
-    if (!Number.isFinite(options.timeoutMs ?? 180000) || (options.timeoutMs ?? 180000) <= 0)
-      throw failure('INVALID_REQUEST', '无效的超时时间');
-  } catch (err) { return Promise.reject(err); }
-  const deadline = Date.now() + (options.timeoutMs ?? 180000);
-  return new Promise((resolve, reject) => {
-    let cancelled = false;
-    const stopWaiting = error => { cancelled = true; cleanup(); reject(error); };
-    const abort = () => stopWaiting(failure('CANCELLED', '凭据获取已取消'));
-    const timer = setTimeout(() => stopWaiting(failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件')), deadline - Date.now());
-    const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); };
-    options.signal?.addEventListener('abort', abort, { once: true });
-    if (options.signal?.aborted) abort();
-    const work = queue.then(async () => {
-      if (cancelled) return;
-      cleanup(); // The active listener now owns its timeout and cancellation.
-      try { resolve(await receiveCookies(request, deadline, options.signal)); }
-      catch (err) { reject(err); }
-    });
-    queue = work.catch(reject);
+// A cookie reaches this URL when its domain, path and scheme all match it.
+function cookiesForRequest(cookies, { url, names }) {
+  const target = new URL(url);
+  return cookies.filter(c => {
+    const domain = String(c.domain || '').replace(/^\./, '');
+    const cookiePath = c.path || '/';
+    return domain && (c.hostOnly ? target.hostname === domain :
+      target.hostname === domain || target.hostname.endsWith(`.${domain}`)) &&
+      (target.pathname === cookiePath || target.pathname.startsWith(cookiePath.endsWith('/') ? cookiePath : `${cookiePath}/`)) &&
+      (!c.secure || target.protocol === 'https:') && !c.partitionKey &&
+      (!c.expirationDate || c.expirationDate * 1000 > Date.now()) &&
+      (!names || names.includes(c.name));
   });
 }
 
-function receiveCookies(request, deadline, signal) {
-  return new Promise((resolve, reject) => {
-    const task = { id: randomUUID(), ...request, expiresAt: deadline };
-    let claimed = false;
-    let finished = false;
-    const sockets = new Set();
-    const server = http.createServer(async (req, res) => {
-      const reply = (status, body) => {
-        res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'close' });
-        res.end(JSON.stringify(body));
-      };
-      const origin = req.headers.origin;
-      if (req.headers.host !== `127.0.0.1:${PORT}` ||
-          (origin && !/^chrome-extension:\/\/[a-p]{32}$/.test(origin)) ||
-          req.headers['x-leo-credential-relay'] !== '1') return reply(403, { error: 'FORBIDDEN' });
-      if (req.method !== 'POST' || !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || ''))
-        return reply(400, { error: 'INVALID_REQUEST' });
-      if (!['/credential-relay/poll', '/credential-relay/result'].includes(req.url))
-        return reply(404, { error: 'NOT_FOUND' });
-      try {
-        const chunks = []; let bytes = 0;
-        for await (const chunk of req) {
-          bytes += chunk.length;
-          if (bytes > MAX_BODY) { reply(413, { error: 'RESULT_TOO_LARGE' }); return; }
-          chunks.push(chunk);
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if (!body || typeof body !== 'object' || Array.isArray(body)) return reply(400, { error: 'INVALID_REQUEST' });
-        if (req.url.endsWith('/poll')) {
-          const available = !claimed && !finished;
-          if (available) claimed = true;
-          return reply(200, { task: available ? task : null });
-        }
-        if (body.id !== task.id || !claimed) return reply(409, { error: 'UNKNOWN_TASK' });
-        if (finished) return reply(200, { ok: true });
-        let error;
-        let cookies;
-        if (body.error) error = failure('BROWSER_READ_FAILED', '浏览器无法读取凭据，请确认已登录目标网站');
-        else {
-          cookiesToHeader(body.cookies);
-          const target = new URL(request.url);
-          cookies = body.cookies.filter(c => {
-            const domain = String(c.domain || '').replace(/^\./, '');
-            const cookiePath = c.path || '/';
-            return domain && (c.hostOnly ? target.hostname === domain :
-              target.hostname === domain || target.hostname.endsWith(`.${domain}`)) &&
-              (target.pathname === cookiePath || target.pathname.startsWith(cookiePath.endsWith('/') ? cookiePath : `${cookiePath}/`)) &&
-              (!c.secure || target.protocol === 'https:') && !c.partitionKey &&
-              (!c.expirationDate || c.expirationDate * 1000 > Date.now()) &&
-              (!request.names || request.names.includes(c.name));
-          });
-          if (!cookies.length) error = failure('COOKIE_NOT_FOUND', '浏览器没有对应 Cookie，请登录目标网站');
-        }
-        // Close only after the HTTP response has been written.
-        res.once('finish', () => finish(error, cookies));
-        reply(200, { ok: true });
-      } catch {
-        if (!res.headersSent) reply(400, { error: 'INVALID_RESULT' });
-      }
-    });
-    server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
-    server.requestTimeout = 5000;
-    server.headersTimeout = 5000;
-    const finish = (error, cookies) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
-      const force = setTimeout(() => { for (const socket of sockets) socket.destroy(); }, 1000);
-      server.close(() => {
-        clearTimeout(force);
-        if (signal?.aborted) reject(failure('CANCELLED', '凭据获取已取消'));
-        else if (error) reject(error);
-        else resolve(cookies);
-      });
-      server.closeIdleConnections?.();
-    };
-    const abort = () => finish(failure('CANCELLED', '凭据获取已取消'));
-    const timer = setTimeout(() => finish(failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件')), Math.max(1, deadline - Date.now()));
-    signal?.addEventListener('abort', abort, { once: true });
-    server.once('error', err => finish(failure(err.code === 'EADDRINUSE' ? 'RELAY_BUSY' : 'RELAY_ERROR',
-      err.code === 'EADDRINUSE' ? '凭据端口正在使用，请稍后重试' : '无法启动本地凭据服务')));
-    server.listen(PORT, '127.0.0.1');
-  });
+async function readThroughBridge(request, timeoutMs) {
+  let health;
+  try {
+    health = await ensureBridge({ startTimeoutMs: timeoutMs });
+  } catch {
+    throw failure('RELAY_BUSY', '桥接端口被其他程序占用，请稍后重试');
+  }
+  if (!health.extensionOnline) throw failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件');
+
+  let response;
+  try {
+    response = await executeCommand('cookies', { url: request.url });
+  } catch (err) {
+    if (['command_timeout', 'bridge_unavailable'].includes(err.code))
+      throw failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件');
+    throw failure('BROWSER_READ_FAILED', '浏览器无法读取凭据，请确认已登录目标网站');
+  }
+
+  // Without matchedBy the extension read by hostname and may have missed parent-domain cookies.
+  if (response.result?.matchedBy !== 'url')
+    throw failure('EXTENSION_OUTDATED', '浏览器扩展版本过旧，请在 chrome://extensions 重新加载 Leo cookie.txt Locally 后重试');
+  const browserCookies = response.result.cookies;
+  try { cookiesToHeader(browserCookies); } catch { throw failure('INVALID_RESULT', '浏览器返回了无效 Cookie'); }
+  const cookies = cookiesForRequest(browserCookies, request);
+  if (!cookies.length) throw failure('COOKIE_NOT_FOUND', '浏览器没有对应 Cookie，请登录目标网站');
+  return cookies;
+}
+
+export async function getBrowserCookies(options = {}) {
+  if (process.env.LEO_INSPECTOR_BROWSER_CREDENTIALS === 'off')
+    throw failure('BROWSER_CREDENTIALS_DISABLED', '浏览器自动获取已关闭');
+  const request = normalizeCredentialRequest(options);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw failure('INVALID_REQUEST', '无效的超时时间');
+  return readThroughBridge(request, timeoutMs);
 }
 
 // ---------------- CLI Entrypoint ----------------
@@ -161,7 +96,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 
 选项:
   --names <k1,k2...>     仅提取指定的 Cookie 名称 (逗号分隔)
-  --timeout <ms>         等待扩展轮询超时时间 (默认: 60000ms)
+  --timeout <ms>         等待浏览器的超时时间 (默认: 60000ms)
   --json                 以 JSON 格式输出抓取到的 Cookies
   -h, --help             查看帮助
 
@@ -187,9 +122,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     }
   }
 
-  console.log(`⏳ 正在通过本地端口 ${PORT} 等待 Chrome 扩展 (Leo cookie.txt Locally) 静默同步凭据...`);
+  console.log(`⏳ 正在通过本地桥接从 Chrome 扩展 (Leo cookie.txt Locally) 读取凭据...`);
   console.log(`🎯 目标 URL: ${url}`);
-  console.log(`💡 提示: 请确保已在常驻 Chrome 浏览器中登录该目标站点，扩展将在 1 分钟内自动回传。\n`);
+  console.log(`💡 提示: 请确保已在常驻 Chrome 浏览器中登录该目标站点。\n`);
 
   getBrowserCookies({ url, names, timeoutMs })
     .then(cookies => {
