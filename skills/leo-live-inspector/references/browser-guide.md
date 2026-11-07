@@ -41,6 +41,8 @@ node <skillDir>/scripts/cli/index.mjs <command>
    - 截图：`screenshot --out page.png`、`screenshot --sel ".box" --out box.png`、`screenshot --ref 10 --out btn.png`
 5. **结束任务**：`end-task`
 
+业务脚本取凭据时会自动处理读不到 Cookie 的情况。手动导出时用 `cookies --url <URL> --open-if-missing --out <文件>`：读不到就在后台独立窗口打开网站再读，读完一定关闭；跳到登录页时以 `login_required` 报错，请提示用户登录，不要反复尝试。
+
 ## 常见排查
 
 1. **Ref 与 Generation**：`snapshot`、`state`、`find` 返回的元素都带 `ref` 和 `generation`。可直接传 `--ref 10`，或 `--target '{"kind":"ref","ref":10}'`。省略 `generation` 时绑定当前文档；提供了 `generation` 且页面已跳转，会返回 `stale_ref_generation` 并阻止误操作。

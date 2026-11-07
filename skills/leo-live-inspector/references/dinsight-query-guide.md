@@ -18,7 +18,7 @@
 
 ## 2. 凭证获取
 
-默认自动获取：安装/升级本 skill 随附的 Chrome 插件至 1.3.13 并重新加载，在同一普通 Profile 登录 Dinsight 后执行命令。缓存缺失或明确登录失败时，`credential_relay` 按实际 API URL 获取以下 5 个 Cookie，验证后保存。默认最多等待 180 秒；未登录时先登录再重试。无需手动复制或设置插件域名。
+默认自动获取：安装/升级本 skill 随附的 Chrome 插件至 1.3.15 并重新加载，在同一普通 Profile 登录 Dinsight 后执行命令。缓存缺失或明确登录失败时，`credential_relay` 按实际 API URL 获取以下 5 个 Cookie，验证后保存。默认最多等待 180 秒；未登录时先登录再重试。无需手动复制或设置插件域名。
 
 以下手动流程仅用于自动获取不可用时。可设置 `LEO_INSPECTOR_BROWSER_CREDENTIALS=off` 关闭自动获取。
 

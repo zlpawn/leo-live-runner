@@ -1,4 +1,5 @@
-import { ensureBridge, executeCommand } from './cli/lib/cli.mjs';
+import { ensureBridge, executeCommand, visitForCookies } from './cli/lib/cli.mjs';
+import { DEFAULT_VISIT_TIMEOUT_MS } from './cli/lib/protocol.mjs';
 
 const DEFAULT_TIMEOUT_MS = 180000;
 const failure = (code, message) => Object.assign(new Error(message), { code });
@@ -39,7 +40,32 @@ function cookiesForRequest(cookies, { url, names }) {
   });
 }
 
-async function readThroughBridge(request, timeoutMs) {
+const usable = (browserCookies, request) => {
+  try { cookiesToHeader(browserCookies); } catch { throw failure('INVALID_RESULT', '浏览器返回了无效 Cookie'); }
+  return cookiesForRequest(browserCookies, request);
+};
+
+// Opens the site's root rather than the request URL, which may be an API path.
+async function readByOpeningSite(request, timeoutMs) {
+  const target = new URL(request.url);
+  let visit;
+  try {
+    visit = await visitForCookies(`${target.origin}/`, { cookieUrl: request.url, visitTimeoutMs: Math.min(timeoutMs, DEFAULT_VISIT_TIMEOUT_MS) });
+  } catch (err) {
+    if (err.code === 'extension_outdated')
+      throw failure('EXTENSION_OUTDATED', '浏览器扩展版本过旧，请在 chrome://extensions 重新加载 Leo cookie.txt Locally 后重试');
+    if (['command_timeout', 'bridge_unavailable'].includes(err.code))
+      throw failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件');
+    throw failure('BROWSER_READ_FAILED', '无法打开目标网站读取凭据，请确认已登录目标网站');
+  }
+  // The login page's own cookies do not make the user logged in.
+  if (visit.loginRequired) throw failure('LOGIN_REQUIRED', `${target.origin} 需要登录，请在 Chrome 中登录后重试`);
+  const cookies = usable(visit.cookies, request);
+  if (!cookies.length) throw failure('COOKIE_NOT_FOUND', '浏览器没有对应 Cookie，请登录目标网站');
+  return cookies;
+}
+
+async function readThroughBridge(request, timeoutMs, visit) {
   let health;
   try {
     health = await ensureBridge({ startTimeoutMs: timeoutMs });
@@ -47,6 +73,7 @@ async function readThroughBridge(request, timeoutMs) {
     throw failure('RELAY_BUSY', '桥接端口被其他程序占用，请稍后重试');
   }
   if (!health.extensionOnline) throw failure('RELAY_TIMEOUT', '等待浏览器超时，请打开浏览器并启用插件');
+  if (visit) return readByOpeningSite(request, timeoutMs);
 
   let response;
   try {
@@ -60,11 +87,8 @@ async function readThroughBridge(request, timeoutMs) {
   // Without matchedBy the extension read by hostname and may have missed parent-domain cookies.
   if (response.result?.matchedBy !== 'url')
     throw failure('EXTENSION_OUTDATED', '浏览器扩展版本过旧，请在 chrome://extensions 重新加载 Leo cookie.txt Locally 后重试');
-  const browserCookies = response.result.cookies;
-  try { cookiesToHeader(browserCookies); } catch { throw failure('INVALID_RESULT', '浏览器返回了无效 Cookie'); }
-  const cookies = cookiesForRequest(browserCookies, request);
-  if (!cookies.length) throw failure('COOKIE_NOT_FOUND', '浏览器没有对应 Cookie，请登录目标网站');
-  return cookies;
+  const cookies = usable(response.result.cookies, request);
+  return cookies.length ? cookies : readByOpeningSite(request, timeoutMs);
 }
 
 export async function getBrowserCookies(options = {}) {
@@ -73,7 +97,7 @@ export async function getBrowserCookies(options = {}) {
   const request = normalizeCredentialRequest(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw failure('INVALID_REQUEST', '无效的超时时间');
-  return readThroughBridge(request, timeoutMs);
+  return readThroughBridge(request, timeoutMs, Boolean(options.visit));
 }
 
 // ---------------- CLI Entrypoint ----------------

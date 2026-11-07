@@ -15,11 +15,42 @@ test('missing credential obtained once and persisted only after success',async()
  assert.equal(saved,'sid=new');assert.equal(gets,1);
 });
 test('expired cached credential refreshed once; failed candidate is never saved',async()=>{
- let calls=0,gets=0;
- const s=session({load:()=> 'sid=old',save:()=>assert.fail('bad cache write'),getCookies:async()=>{gets++;return fresh;}});
- const r=await s.run(target,async()=>{calls++;return {statusCode:401};},{readOnly:true});
- assert.equal(r.statusCode,401);assert.equal(calls,2);assert.equal(gets,1);
- await s.run(target,async()=>({statusCode:401}),{readOnly:true});assert.equal(gets,1);
+ let calls=0;const gets=[];
+ const s=session({load:()=> 'sid=old',save:()=>assert.fail('bad cache write'),getCookies:async o=>{gets.push(Boolean(o.visit));return fresh;}});
+ await assert.rejects(s.run(target,async()=>{calls++;return {statusCode:401};},{readOnly:true}),{code:'CREDENTIAL_REJECTED'});
+ assert.equal(calls,2);assert.deepEqual(gets,[false,true]);
+ await s.run(target,async()=>({statusCode:401}),{readOnly:true});assert.equal(gets.length,2);
+});
+test('cookies the server rejects are renewed by opening the site, then saved',async()=>{
+ let saved;const gets=[];
+ const s=session({load:()=> 'sid=old',save:c=>saved=c,getCookies:async o=>{gets.push(Boolean(o.visit));return o.visit?[{name:'sid',value:'renewed'}]:fresh;}});
+ const r=await s.run(target,async c=>({statusCode:c==='sid=renewed'?200:401}),{readOnly:true});
+ assert.equal(r.statusCode,200);assert.equal(saved,'sid=renewed');assert.deepEqual(gets,[false,true]);
+});
+test('a browser cookie identical to the rejected cache is renewed by opening the site',async()=>{
+ const gets=[];
+ const s=session({load:()=> 'sid=new',getCookies:async o=>{gets.push(Boolean(o.visit));return o.visit?[{name:'sid',value:'renewed'}]:fresh;}});
+ const r=await s.run(target,async c=>({statusCode:c==='sid=renewed'?200:401}),{readOnly:true});
+ assert.equal(r.statusCode,200);assert.deepEqual(gets,[false,true]);
+});
+test('a cookie read with no cache that the server rejects is also renewed',async()=>{
+ const gets=[];
+ const s=session({load:()=>'',getCookies:async o=>{gets.push(Boolean(o.visit));return o.visit?[{name:'sid',value:'renewed'}]:fresh;}});
+ const r=await s.run(target,async c=>({statusCode:c==='sid=renewed'?200:401}),{readOnly:true});
+ assert.equal(r.statusCode,200);assert.deepEqual(gets,[false,true]);
+});
+test('a required login stops the request and is not retried',async()=>{
+ let gets=0;let sent=0;
+ const s=session({load:()=> 'sid=old',getCookies:async o=>{gets++;if(o.visit) throw Object.assign(new Error('login'),{code:'LOGIN_REQUIRED'});return [{name:'sid',value:'old'}];}});
+ await assert.rejects(s.run(target,async()=>{sent++;return {statusCode:401};},{readOnly:true}),{code:'LOGIN_REQUIRED'});
+ assert.equal(gets,2);assert.equal(sent,1);
+});
+test('a write never opens the site',async()=>{
+ const gets=[];
+ const s=session({load:()=> 'sid=old',getCookies:async o=>{gets.push(o);return fresh;}});
+ await s.run(target,async()=>({statusCode:200}),{readOnly:true});
+ const r=await s.run(target,async()=>({statusCode:401}));
+ assert.equal(r.statusCode,401);assert.deepEqual(gets,[]);
 });
 test('ordinary failures, explicit overrides and anonymous success never read browser',async()=>{
  for(const statusCode of [403,500,504]) {

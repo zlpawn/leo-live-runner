@@ -25,22 +25,24 @@ export function isCredentialSuccess(response) {
   return true;
 }
 
-// A small per-service session: lazy load, at most one browser fetch, no write replay.
+// A small per-service session: lazy load, at most one browser read and one site visit, no write replay.
 export function createCredentialSession({ load = () => '', save = () => {}, explicit = false,
   anonymous = false, fallbackLoad, names, fromCookies = cookiesToHeader, isAuthFailure = isLoginFailure,
   isSuccess = isCredentialSuccess, getCookies = getBrowserCookies, preflight } = {}) {
   let value;
   let fetched = false;
+  let visited = false;
   let pendingSave = false;
   let validated = false;
   const current = () => { if (value === undefined) value = load(); return value; };
-  const acquire = async url => {
+  // Returns false when the browser only has the credential already in use.
+  const acquire = async (url, visit = false) => {
     fetched = true;
-    const candidate = fromCookies(await getCookies({ url, names }));
+    const candidate = fromCookies(await getCookies({ url, names, ...(visit ? { visit } : {}) }));
     if (!candidate) throw Object.assign(new Error('浏览器没有需要的凭据，请登录目标网站'), {code:'COOKIE_NOT_FOUND'});
-    if (value && JSON.stringify(candidate) === JSON.stringify(value))
-      throw Object.assign(new Error('浏览器登录态同样已失效，请重新登录目标网站'), {code:'CREDENTIAL_REJECTED'});
+    if (value && JSON.stringify(candidate) === JSON.stringify(value)) return false;
     value = candidate; pendingSave = true; validated = false;
+    return true;
   };
   async function run(url, send, { readOnly = false } = {}) {
     current();
@@ -56,8 +58,14 @@ export function createCredentialSession({ load = () => '', save = () => {}, expl
       const cached = fallbackLoad();
       if (cached) { value = cached; result = await send(value); }
     }
-    if (readOnly && isAuthFailure(result) && !explicit && !fetched) {
-      await acquire(url);
+    if (readOnly && isAuthFailure(result) && !explicit && !fetched && await acquire(url)) {
+      result = await send(value);
+    }
+    // The browser's own cookie can be expired too; opening the site lets it renew or ask for a login.
+    if (readOnly && isAuthFailure(result) && !explicit && fetched && !visited) {
+      visited = true;
+      if (!await acquire(url, true))
+        throw Object.assign(new Error('浏览器登录态同样已失效，请重新登录目标网站'), {code:'CREDENTIAL_REJECTED'});
       result = await send(value);
     }
     if (isAuthFailure(result)) validated = false;

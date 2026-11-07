@@ -15,7 +15,7 @@ import { startFakeExtension } from './fake-extension.mjs';
 const cookie = { name: 'sid', value: 'test-secret', domain: 'example.com', path: '/', secure: true, httpOnly: true, hostOnly: true, session: true };
 
 /** A real bridge plus the real extension cookie code, reading from a stand-in for the browser. */
-async function startBrowser(browserCookie = []) {
+async function startBrowser(browserCookie = [], visit = () => ({ cookies: [] })) {
   const reads = [];
   const chromeApi = {
     cookies: {
@@ -25,7 +25,11 @@ async function startBrowser(browserCookie = []) {
       },
     },
   };
-  const fake = await startFakeExtension((cmd) => exportCookies(chromeApi, cmd.params));
+  const fake = await startFakeExtension(async (cmd) => {
+    if (cmd.type !== 'cookies.visit') return exportCookies(chromeApi, cmd.params);
+    const page = await visit(cmd.params);
+    return { matchedBy: 'url', loginRequired: false, finalUrl: cmd.params.url, ...page };
+  });
   return { ...fake, reads };
 }
 
@@ -92,14 +96,84 @@ test('an extension that ignored the url asks for a reload and its cookies are no
   }
 });
 
-test('no cookies for the target reads as not logged in', async () => {
+test('no cookies, and none after opening the site, reads as not found', async () => {
   const browser = await startBrowser([]);
   try {
     await withBridgePort(browser.port, () =>
       assert.rejects(getBrowserCookies({ url: 'https://example.com', timeoutMs: 2000 }), { code: 'COOKIE_NOT_FOUND' })
     );
+    assert.deepEqual(browser.commands.map((cmd) => cmd.type), ['cookies.export', 'cookies.visit']);
   } finally {
     await browser.stop();
+  }
+});
+
+test('missing cookies are fetched by opening the site root, and read for the requested url', async () => {
+  const browser = await startBrowser([], () => ({ cookies: [cookie] }));
+  try {
+    const cookies = await withBridgePort(browser.port, () =>
+      getBrowserCookies({ url: 'https://example.com/api/me', timeoutMs: 2000 })
+    );
+    assert.deepEqual(cookies.map((c) => c.name), ['sid']);
+    const visit = browser.commands[1];
+    assert.equal(visit.params.url, 'https://example.com/');
+    assert.equal(visit.params.cookieUrl, 'https://example.com/api/me');
+  } finally {
+    await browser.stop();
+  }
+});
+
+test('a site that needs a login says so and its cookies are not used', async () => {
+  const browser = await startBrowser([], () => ({ cookies: [cookie], loginRequired: true, finalUrl: 'https://login.example.com/' }));
+  try {
+    await withBridgePort(browser.port, () =>
+      assert.rejects(getBrowserCookies({ url: 'https://example.com/', timeoutMs: 2000 }), (err) => {
+        assert.equal(err.code, 'LOGIN_REQUIRED');
+        assert.match(err.message, /example\.com/);
+        assert.match(err.message, /登录/);
+        return true;
+      })
+    );
+  } finally {
+    await browser.stop();
+  }
+});
+
+test('visit: true opens the site even though cookies exist', async () => {
+  const renewed = { ...cookie, value: 'renewed' };
+  const browser = await startBrowser([cookie], () => ({ cookies: [renewed] }));
+  try {
+    const cookies = await withBridgePort(browser.port, () =>
+      getBrowserCookies({ url: 'https://example.com/', visit: true, timeoutMs: 2000 })
+    );
+    assert.deepEqual(cookies, [renewed]);
+    assert.deepEqual(browser.commands.map((cmd) => cmd.type), ['cookies.visit']);
+  } finally {
+    await browser.stop();
+  }
+});
+
+test('present cookies never open the site', async () => {
+  const browser = await startBrowser([cookie], () => assert.fail('must not visit'));
+  try {
+    await withBridgePort(browser.port, () => getBrowserCookies({ url: 'https://example.com/', timeoutMs: 2000 }));
+    assert.deepEqual(browser.commands.map((cmd) => cmd.type), ['cookies.export']);
+  } finally {
+    await browser.stop();
+  }
+});
+
+test('an extension without visits asks for a reload', async () => {
+  const fake = await startFakeExtension((cmd) => {
+    if (cmd.type === 'cookies.visit') throw { code: 'invalid_request', message: 'Unsupported task type: cookies.visit' };
+    return { cookies: [], count: 0, matchedBy: 'url' };
+  });
+  try {
+    await withBridgePort(fake.port, () =>
+      assert.rejects(getBrowserCookies({ url: 'https://example.com/', timeoutMs: 2000 }), { code: 'EXTENSION_OUTDATED' })
+    );
+  } finally {
+    await fake.stop();
   }
 });
 
