@@ -44,8 +44,10 @@ pipeline:
     batch_size: 1000
     target_data: "all_sheet_ucids"
     payload_template:
-      ucids: "${target_data}"
-      needNationData: 1
+      nationDataUcIds: "${target_data}"
+      lockSuperAdminUcIds: []
+      lockAdminUcIds: []
+      lockInfoViewerUcIds: []
 
   - step_id: 2
     name: "Apollo 免审批白名单清洗与替换"

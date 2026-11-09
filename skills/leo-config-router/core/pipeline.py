@@ -57,14 +57,16 @@ class ScenarioPipeline:
             print(f"⚠️ [Apollo] 读取线上白名单失败 ({e})，降级为空列表比对", file=sys.stderr)
             return [], set()
 
-    def invoke_backdoor_api(self, endpoint: str, ucids: List[str], need_nation_data: int = 1) -> Tuple[bool, str]:
+    def invoke_backdoor_api(self, endpoint: str, ucids: List[str]) -> Tuple[bool, str]:
         """批量调用后端后门权限刷新接口"""
         if not ucids:
             return True, "名单为空，无需调用"
 
         payload = {
-            "ucids": ucids,
-            "needNationData": need_nation_data
+            "nationDataUcIds": ucids,
+            "lockSuperAdminUcIds": [],
+            "lockAdminUcIds": [],
+            "lockInfoViewerUcIds": []
         }
         data_bytes = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(
