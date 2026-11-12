@@ -385,14 +385,15 @@ async function main() {
 
   // 4. 分页循环拉取历次 Release 历史快照
   const allReleases = [];
+  const seenReleaseIds = new Set();
   let page = 0;
   const maxPages = Math.ceil(depth / pageSize);
 
   while (page < maxPages) {
-    const fetchSize = Math.min(pageSize, depth - allReleases.length);
-    if (fetchSize <= 0) break;
+    if (allReleases.length >= depth) break;
 
-    const histUrl = `/apps/${encodeURIComponent(canonicalApp)}/envs/${portalEnv}/clusters/${encodeURIComponent(resolvedCluster)}/namespaces/${encodeURIComponent(targetNamespace)}/releases/histories?page=${page}&size=${fetchSize}`;
+    // 保持 size = pageSize 不变，确保 Apollo 服务端 (offset = page * size) 分页不错位
+    const histUrl = `/apps/${encodeURIComponent(canonicalApp)}/envs/${portalEnv}/clusters/${encodeURIComponent(resolvedCluster)}/namespaces/${encodeURIComponent(targetNamespace)}/releases/histories?page=${page}&size=${pageSize}`;
     const histRes = await requestPortal(histUrl);
 
     if (histRes.statusCode !== 200 || !Array.isArray(histRes.data)) {
@@ -414,11 +415,15 @@ async function main() {
     if (pageData.length === 0) break;
 
     for (const r of pageData) {
+      const rId = r.id || r.releaseId;
+      if (rId && seenReleaseIds.has(rId)) continue;
+      if (rId) seenReleaseIds.add(rId);
+
       allReleases.push(r);
       if (allReleases.length >= depth) break;
     }
 
-    if (pageData.length < fetchSize) break;
+    if (pageData.length < pageSize) break;
     page++;
   }
 
