@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、ES 搜索平台与索引全生命周期治理（索引结构 Schema 采样推断、多维检索、测试环境安全 CRUD 预审与生产环境物理只读拦截）、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) ES 搜索平台双环境治理与索引探查（免配置自发现、Schema 采样推断、测试环境 CRUD 预审与生产物理只读拦截）；(6) Dinsight 自然语言大数据探查；(7) CI/CD 构建与测试环境部署闭环；(8) Luke 权限中心双环境治理；(9) 通用 Chrome 浏览器操作。支持本地排查流程的保存、检索复用与更新。
+description: 线上与测试环境全场景数据探查、日志检索、TraceId 链路回溯、Apollo 实时配置查询与单项发布轨迹追溯（线上/测试/预发）、测试环境配置安全修改发布、线上变更参谋建议、ES 搜索平台与索引全生命周期治理（索引结构 Schema 采样推断、多维检索、测试环境安全 CRUD 预审与生产环境物理只读拦截）、Dinsight 自然语言大数据探查、以及 Luke 权限中心双环境治理（约束/权限点/角色/人员两阶段风控配置与线上/删除高危拦截、员工权限全景画像与双人三层深度 Diff 对比）。涵盖核心能力：(1) FAST / Kibana 线上日志毫秒级极速直连检索、入参出参抓取与 500 异常排查；(2) Apollo 配置中心免鉴权秒级直连探查、单项配置发布轨迹追溯与版本变迁对比、测试环境两阶段安全修改发布、以及生产环境配置变更参谋建议单自动生成；(3) TraceId 全链路时序回溯与 Mermaid 交互图自动生成；(4) ES 索引自学习与 Chrome 扩展探针自愈；(5) ES 搜索平台双环境治理与索引探查（免配置自发现、Schema 采样推断、测试环境 CRUD 预审与生产物理只读拦截）；(6) Dinsight 自然语言大数据探查；(7) CI/CD 构建与测试环境部署闭环；(8) Luke 权限中心双环境治理；(9) 通用 Chrome 浏览器操作（页面测试、数据抓取、填表导出等），并按页面沉淀可整段执行的操作流程，下次同类任务直接复用。支持本地排查流程的保存、检索复用与更新。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与 Apollo 配置中枢)
@@ -14,7 +14,7 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 6. **🧠 Dinsight 自然语言大数据探查**：自动获取浏览器登录态后，AI 后台直连 Dinsight Agent 流式查数，再结合代码与库表做二次分析；
 7. **🚀 CI/CD 构建与测试环境部署闭环**：后端直连 Shipwright 流水线与服务云工作负载（`scripts/ci_deploy.js`），前端直连 FeCI / 青蝉平台（`scripts/feci_deploy.js`），全自动触发构建、轮询进度并下发部署，坚守生产参谋安全红线；
 8. **🛡️ Luke 权限中心双环境治理（约束、权限点、角色与人员画像/双人三层 Diff）**：支持测试环境 `test-luke.ke.com` (`-e test`) 与线上生产环境 `luke.ke.com` (`-e prod`)（`scripts/luke_query.js` 与 `scripts/luke_modify.js`），支持自然语言全流程探查与配置约束（Ext）、权限点（Perm）、角色（Role）与绑定人员；支持**单人权限全景画像 (`user <ucid|name>`)** 与 **双人三层深度对比 (`diff-user <user1> <user2>`)**，具备约束自动取并集计算、角色/权限点/数据约束范围三层渐进式对比能力，直接输出角色 Code、权限 Code、约束 Code、关联 API 路径与 Luke Portal 控制台直达链接；坚守**两阶段风控原则**：查询操作直接执行；修改已有项、删除角色/权限点、从权限点中剔除接口/服务，以及线上生产环境的一切写操作，强制执行 Pre-flight 输出 Diff 对比与受影响人员/角色分析，**必须等待用户明确确认**后再追加 `--confirm` 执行发布并校验；
-9. **🌐 通用浏览器操作**：业务脚本覆盖不到时，通过随附 CLI（`scripts/cli/index.mjs`）操作用户真实的 Chrome，用于查看页面、截图和抓包，线上一律只读（见[第 8 节](#-8-通用浏览器操作)）。
+9. **🌐 通用浏览器操作与页面流程沉淀**：通过随附 CLI（`scripts/cli/index.mjs`）操作用户真实的 Chrome，做页面测试、数据抓取、填表导出、截图和抓包；每个页面沉淀一份手册（地址、元素定位、可整段执行的操作流程），下次同类任务直接复用；线上一律只读（见[第 8 节](#-8-通用浏览器操作)）。
 10. **🔎 ES 搜索平台双环境治理与索引探查（查询、Schema 反推、测试 CRUD）**：免配置自动探测 Apollo 与多工程代码仓库获取地址与 Token（`scripts/es_query.js` 与 `scripts/es_modify.js`）；支持索引结构 (Schema) 采样推断与多维度数据检索；【测试环境】支持安全 CRUD（含 Pre-flight Diff 预审机制与写入回查校验）；【生产环境】纯正则 `TEST_PATTERNS` 判定，非测试环境严格物理死锁只读保护，杜绝误操作。
 
 > ⚠️ **【核心执行原则：AI 全自动后台执行，严禁要求用户手动运行命令】**
@@ -128,6 +128,8 @@ description: 线上与测试环境全场景数据探查、日志检索、TraceId
 | **用户明确确认 ES 修改（“确认更新”、“提交写入”）** | **阶段 2 (用户确认后正式写入并回查)**：<br>`node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 95}' -e test --confirm` | 提交写网关并自动回查验证最新生效状态 |
 | **“在测试环境删除 ES 记录 10001”** | `node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -e test --confirm` | 提交删除指令并校验文档清除结果 |
 | **“在线上/生产环境修改或删除 ES 数据”** | **执行风控红线拦截 (物理阻断直写)** | **严禁自动化线上写入！** 触发 `assertWritePermitted` 拦截，提示线上仅支持只读查询 |
+| **“在这个页面上抓数据 / 测一下 / 导出 / 按上次的方式再来一遍”** | `node scripts/knowledge.js search '<域名> <路径关键段>' --kind page`，命中则整段执行对应流程，未命中则正常操作（见 [8.1](#81-页面操作流程沉淀与复用)） | 本次任务结果（数据、截图、检查结论）；有摸索过程时询问是否沉淀 |
+| **“把这个页面操作记下来 / 补进页面手册”** | `node scripts/knowledge.js save --file <JSON> --expected-version <版本> --kind page` | 保存后回读，报告手册名称、版本与路径 |
 
 ---
 
@@ -586,12 +588,19 @@ node scripts/credential_relay.js https://cloud.intra.ke.com --json
 
 ## 🌐 8. 通用浏览器操作
 
-业务脚本覆盖不到时，才用随附 CLI 操作用户真实的 Chrome，例如查看页面状态、截图复现问题、抓接口请求。用法见[通用浏览器操作手册](references/browser-guide.md)。
+用随附 CLI 操作用户真实的 Chrome：页面测试、数据抓取、填表导出、查看页面状态、截图复现问题、抓接口请求。查数、查配置、改配置等有业务脚本的场景仍优先用业务脚本。用法见[通用浏览器操作手册](references/browser-guide.md)。
 
 ```bash
 node <skillDir>/scripts/cli/index.mjs state
 node <skillDir>/scripts/cli/index.mjs screenshot --out page.png
 ```
+
+### 8.1 页面操作流程沉淀与复用
+
+对网页做的任何操作（测试、抓数据、填表、导出、截图等），都可以按页面沉淀成**页面手册**：一个页面一份，记录地址、稳定的元素定位、已知坑，以及多个可整段执行的操作流程。下次同一页面的同类任务直接执行流程，不再从头摸索。读取 [页面操作流程手册](references/page-flow-guide.md) 后执行。
+
+- **操作前先检索**：`node scripts/knowledge.js search '<域名> <路径关键段>' --kind page`，命中后 `show <id> --kind page`，找到对应流程后把命令块整段放进一次 Bash 调用执行；某一步失败再退回正常操作，修正后继续。
+- **操作后沉淀**：本次有摸索过程且任务完成时，询问一次是否保存或补进手册；复用时修正过步骤的，提议更新。确认后 `save --kind page`，规则同本地排查流程库。
 
 > 🚨 **【线上写操作红线：网页操作不能绕过风控】**
 > - **线上一律只读**：严禁用 `click`、`fill`、`press`、`upload`、`eval` 在线上 Apollo Portal、线上 Luke、服务云及任何生产发布平台页面提交修改、发布、删除或部署。线上变更仍走参谋模式，由负责人亲自操作。
@@ -868,4 +877,5 @@ node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -
 - **Dinsight 自然语言查数协议**：[references/dinsight-query-guide.md](references/dinsight-query-guide.md)
 - **本地排查流程知识库操作手册**：[references/local-knowledge-guide.md](references/local-knowledge-guide.md)
 - **通用浏览器操作手册**：[references/browser-guide.md](references/browser-guide.md)
+- **页面操作流程沉淀与复用**：[references/page-flow-guide.md](references/page-flow-guide.md)
 - **Trace 全链路时序排障实战**：[examples/100_trace_and_log_query.md](examples/100_trace_and_log_query.md)

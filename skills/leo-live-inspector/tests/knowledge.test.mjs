@@ -160,3 +160,16 @@ test('CLI rejects malformed options and does not leak malformed JSON', t => {
   assert.equal(result.status, 1);
   assert.equal(result.stderr.includes('do-not-echo'), false);
 });
+
+test('page manuals live in pages/ and never mix with investigation workflows', t => {
+  const root = temp(t);
+  saveWorkflow(root, sample, 0);
+  const page = { ...sample, id: 'luke-role-page', title: 'Luke 角色管理页', keywords: ['test-luke.ke.com', '角色'] };
+  const saved = run(root, ['save', '--file', '-', '--expected-version', '0', '--kind', 'page'], page);
+  assert.equal(saved.status, 0, saved.stderr);
+  assert.equal(path.basename(path.dirname(JSON.parse(saved.stdout).file)), 'pages');
+  assert.deepEqual(JSON.parse(run(root, ['search', 'test-luke.ke.com', '--kind', 'page']).stdout).workflows.map(item => item.id), ['luke-role-page']);
+  assert.equal(searchWorkflows(root, 'test-luke.ke.com').workflows.length, 0);
+  assert.equal(readWorkflow(root, 'luke-role-page', 'page').title, 'Luke 角色管理页');
+  assert.notEqual(run(root, ['list', '--kind', 'script']).status, 0);
+});

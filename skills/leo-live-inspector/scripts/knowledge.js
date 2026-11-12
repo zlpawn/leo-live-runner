@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Local workflow storage. No query execution, credentials, or network access.
+// Local workflow / page-manual storage. No query execution, credentials, or network access.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,12 +48,20 @@ function validateInput(input) {
   };
 }
 
-function workflowPath(root, id) {
-  return path.join(root, 'workflows', `${validateId(id)}.md`);
+// workflow: 排查流程；page: 单个网页的页面手册与操作流程
+const KIND_DIRS = { workflow: 'workflows', page: 'pages' };
+
+function kindDir(root, kind = 'workflow') {
+  if (!Object.hasOwn(KIND_DIRS, kind)) throw new Error(`kind 只能是 ${Object.keys(KIND_DIRS).join(' / ')}`);
+  return path.join(root, KIND_DIRS[kind]);
 }
 
-export function readWorkflow(root, id) {
-  const file = workflowPath(root, id);
+function workflowPath(root, id, kind) {
+  return path.join(kindDir(root, kind), `${validateId(id)}.md`);
+}
+
+export function readWorkflow(root, id, kind = 'workflow') {
+  const file = workflowPath(root, id, kind);
   if (!fs.lstatSync(file).isFile()) throw new Error(`流程不是普通文件: ${id}`);
   const raw = fs.readFileSync(file, 'utf8');
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(raw);
@@ -67,12 +75,12 @@ export function readWorkflow(root, id) {
   return { ...workflow, schemaVersion: 1, version: metadata.version, createdAt: metadata.createdAt, updatedAt: metadata.updatedAt, file };
 }
 
-export function saveWorkflow(root, input, expectedVersion) {
+export function saveWorkflow(root, input, expectedVersion, kind = 'workflow') {
   const workflow = validateInput(input);
   if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('expected-version 必须是非负整数；新建用 0');
-  const directory = path.join(root, 'workflows');
+  const directory = kindDir(root, kind);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const file = workflowPath(root, workflow.id);
+  const file = workflowPath(root, workflow.id, kind);
   const lock = `${file}.lock`;
   try {
     fs.mkdirSync(lock, { mode: 0o700 });
@@ -83,7 +91,7 @@ export function saveWorkflow(root, input, expectedVersion) {
   const temporary = path.join(directory, `.${workflow.id}-${randomUUID()}.tmp`);
   try {
     let current;
-    try { current = readWorkflow(root, workflow.id); } catch (error) {
+    try { current = readWorkflow(root, workflow.id, kind); } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
     if ((current?.version ?? 0) !== expectedVersion) {
@@ -102,9 +110,9 @@ export function saveWorkflow(root, input, expectedVersion) {
   }
 }
 
-export function searchWorkflows(root, query = '', service = '') {
+export function searchWorkflows(root, query = '', service = '', kind = 'workflow') {
   let entries;
-  try { entries = fs.readdirSync(path.join(root, 'workflows'), { withFileTypes: true }); } catch (error) {
+  try { entries = fs.readdirSync(kindDir(root, kind), { withFileTypes: true }); } catch (error) {
     if (error.code === 'ENOENT') return { workflows: [], warnings: [] };
     throw error;
   }
@@ -114,7 +122,7 @@ export function searchWorkflows(root, query = '', service = '') {
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
     let workflow;
-    try { workflow = readWorkflow(root, entry.name.slice(0, -3)); } catch {
+    try { workflow = readWorkflow(root, entry.name.slice(0, -3), kind); } catch {
       warnings.push(`无法读取流程文件: ${entry.name}；请检查格式，未将它视为无匹配`);
       continue;
     }
@@ -131,12 +139,14 @@ export function searchWorkflows(root, query = '', service = '') {
 }
 
 function printUsage() {
-  console.log(`本地排查流程库（只存取文档，不执行查询）
+  console.log(`本地排查流程库与页面手册库（只存取文档，不执行查询）
   node scripts/knowledge.js path
-  node scripts/knowledge.js list [--service <service>]
-  node scripts/knowledge.js search "关键词 空格分隔" [--service <service>]
-  node scripts/knowledge.js show <id>
-  node scripts/knowledge.js save --file <JSON文件或-> --expected-version <版本>
+  node scripts/knowledge.js list [--service <service>] [--kind page]
+  node scripts/knowledge.js search "关键词 空格分隔" [--service <service>] [--kind page]
+  node scripts/knowledge.js show <id> [--kind page]
+  node scripts/knowledge.js save --file <JSON文件或-> --expected-version <版本> [--kind page]
+
+--kind 默认 workflow（排查流程，存 workflows/）；page 为单个网页的页面手册与操作流程（存 pages/）。
 
 新建版本为 0；更新先 show，使用返回的 version。所有结果为 JSON。
 默认目录: ~/.shrimp/skills/live-inspector/knowledge/
@@ -158,6 +168,8 @@ export function main(argv = process.argv.slice(2)) {
   if (!args.length || args[0] === '--help' || args[0] === '-h') return printUsage();
   const command = args.shift();
   const root = knowledgeDirectory();
+  const kind = takeOption(args, '--kind') ?? 'workflow';
+  kindDir(root, kind);
   let result;
   if (command === 'path') {
     if (args.length) throw new Error('path 不接受额外参数');
@@ -166,16 +178,16 @@ export function main(argv = process.argv.slice(2)) {
     const service = takeOption(args, '--service') ?? '';
     const query = command === 'search' ? requiredText(args.shift(), '关键词') : '';
     if (args.length) throw new Error('存在未知参数；多个关键词请放在同一段引号内');
-    result = { directory: root, ...searchWorkflows(root, query, service) };
+    result = { directory: root, ...searchWorkflows(root, query, service, kind) };
   } else if (command === 'show') {
     if (args.length !== 1) throw new Error('show 需要一个流程 id');
-    result = readWorkflow(root, args[0]);
+    result = readWorkflow(root, args[0], kind);
   } else if (command === 'save') {
     const source = takeOption(args, '--file');
     const version = takeOption(args, '--expected-version');
     if (!source || !/^\d+$/.test(version ?? '') || args.length) throw new Error('save 需要 --file 和 --expected-version；不接受其他参数');
     const input = JSON.parse(fs.readFileSync(source === '-' ? 0 : source, 'utf8'));
-    result = saveWorkflow(root, input, Number(version));
+    result = saveWorkflow(root, input, Number(version), kind);
   } else {
     throw new Error(`未知命令: ${command}`);
   }
