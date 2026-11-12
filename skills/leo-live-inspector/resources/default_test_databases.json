@@ -289,5 +289,44 @@
         "user": "root"
       }
     }
+  },
+  "iot-device-access": {
+    "serviceName": "iot-device-access",
+    "defaultDatasource": "iot_access",
+    "datasources": {
+      "iot_access": {
+        "alias": "iot_access",
+        "database": "iot_access",
+        "host": "m10155.mars.test.mysql.ljnode.com",
+        "port": 10155,
+        "user": "root"
+      }
+    }
+  },
+  "beijia-iot-device-access": {
+    "serviceName": "beijia-iot-device-access",
+    "defaultDatasource": "iot_access",
+    "datasources": {
+      "iot_access": {
+        "alias": "iot_access",
+        "database": "iot_access",
+        "host": "m10155.mars.test.mysql.ljnode.com",
+        "port": 10155,
+        "user": "root"
+      }
+    }
+  },
+  "smart-customer-service": {
+    "serviceName": "smart-customer-service",
+    "defaultDatasource": "default",
+    "datasources": {
+      "default": {
+        "alias": "default",
+        "database": "smart_customer_service",
+        "host": "m10155.mars.test.mysql.ljnode.com",
+        "port": 10155,
+        "user": "root"
+      }
+    }
   }
 }
