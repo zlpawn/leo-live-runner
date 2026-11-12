@@ -7,7 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PRESET_RESOURCE_FILE = path.join(__dirname, '..', '..', 'resources', 'default_services.json');
-const USER_SERVICE_MAP_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-runner', 'service_map.json');
+export const USER_SERVICE_MAP_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-inspector', 'service_map.json');
+// 早期版本误写到兄弟 skill 目录，首次读取时迁移过来
+const LEGACY_SERVICE_MAP_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-runner', 'service_map.json');
 
 // 全环境 Apollo ConfigService 地址映射表
 export const APOLLO_SERVERS = {
@@ -58,6 +60,30 @@ export const HARDCODED_FALLBACK_ALIASES = {
 
 let cachedCatalog = null;
 
+/** 读取用户自学习映射；新路径不存在时从旧的 live-runner 目录迁移一次 */
+export function readUserServiceMap() {
+  try {
+    if (!fs.existsSync(USER_SERVICE_MAP_FILE) && fs.existsSync(LEGACY_SERVICE_MAP_FILE)) {
+      fs.mkdirSync(path.dirname(USER_SERVICE_MAP_FILE), { recursive: true });
+      fs.copyFileSync(LEGACY_SERVICE_MAP_FILE, USER_SERVICE_MAP_FILE);
+    }
+    return JSON.parse(fs.readFileSync(USER_SERVICE_MAP_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/** 只把本次学到的字段写回用户映射，不把内置条目整份落盘 */
+export function saveLearnedService(app, fields) {
+  const map = readUserServiceMap();
+  map[app] = { ...map[app], ...fields };
+  try {
+    fs.mkdirSync(path.dirname(USER_SERVICE_MAP_FILE), { recursive: true });
+    fs.writeFileSync(USER_SERVICE_MAP_FILE, JSON.stringify(map, null, 2), 'utf8');
+  } catch {}
+  if (cachedCatalog) cachedCatalog[app] = { ...cachedCatalog[app], ...fields };
+}
+
 /**
  * 加载全量微服务注册表 (合并内置预设与用户动态映射)
  */
@@ -76,12 +102,9 @@ export function loadServiceCatalog(forceReload = false) {
     } catch {}
   }
 
-  // 2. 读取用户自定义动态映射 service_map.json
-  if (fs.existsSync(USER_SERVICE_MAP_FILE)) {
-    try {
-      const userMap = JSON.parse(fs.readFileSync(USER_SERVICE_MAP_FILE, 'utf8'));
-      Object.assign(catalog, userMap);
-    } catch {}
+  // 2. 读取用户自学习映射 service_map.json，按字段覆盖内置条目，不整条替换
+  for (const [app, entry] of Object.entries(readUserServiceMap())) {
+    catalog[app] = { ...catalog[app], ...entry };
   }
 
   // 3. 保底补齐

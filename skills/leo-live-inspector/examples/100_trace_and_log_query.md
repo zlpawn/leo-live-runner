@@ -62,7 +62,7 @@ sequenceDiagram
 ## ⚙️ 自学习缓存机制
 
 所有微服务与 Elasticsearch 索引的映射关系将自动缓存在用户的本机目录：
-* **缓存路径**：`~/.shrimp/skills/live-runner/service_map.json`
+* **缓存路径**：`~/.shrimp/skills/live-inspector/service_map.json`
 * **格式示例**：
   ```json
   {

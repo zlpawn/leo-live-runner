@@ -386,7 +386,7 @@ async function main() {
     console.log(`⭐ 默认主数据源: ${serviceConfig.defaultDatasource || Object.keys(serviceConfig.datasources)[0]}\n`);
     for (const [alias, ds] of Object.entries(serviceConfig.datasources)) {
       const isDef = (alias === serviceConfig.defaultDatasource) ? ' (默认)' : '';
-      console.log(`  ├─ [${alias}]${isDef} ➔ ${ds.host}:${ds.port}/${ds.database} (用户: ${ds.user})`);
+      console.log(`  ├─ [${alias}]${isDef} ➔ ${ds.host}:${ds.port}/${ds.database} (用户: ${ds.user || "未缓存，连接时从工程配置读取"})`);
     }
     console.log(``);
     process.exit(0);
@@ -442,7 +442,8 @@ async function main() {
   // 5. 支持离散参数直接覆盖或完全自组装
   let host = customHost || targetDatasource?.host;
   let port = customPort || targetDatasource?.port || 3306;
-  let user = customUser || targetDatasource?.user || 'root';
+  // 随 skill 发布的拓扑不带用户名，缺失时从本地缓存或工程配置补齐，最后才兜底 root
+  let user = customUser || targetDatasource?.user || '';
   let password = customPassword || targetDatasource?.password || '';
   let database = customDatabase || targetDatasource?.database || '';
   const dsAlias = dsArg || targetDatasource?.alias || database || 'default';
@@ -455,6 +456,7 @@ async function main() {
       const match = sniffed.find(s => s.database === database || s.port === port) || sniffed[0];
       if (match && match.password) {
         password = match.password;
+        if (!user) user = match.user;
         if (!host) host = match.host;
         if (!port) port = match.port;
         if (!database) database = match.database;
@@ -473,11 +475,13 @@ async function main() {
     console.error(`   请切换到该项目的代码根目录下执行本命令：`);
     console.error(`   👉 cd ${suggestedDir}`);
     console.error(`   系统将自动就地从 application-test.yml / .env.test 提取密码并建立连接。\n`);
-    console.error(`🛠️ 备选方式：直接通过参数提供一次密码：`);
-    console.error(`   node scripts/test_mysql_query.js ${serviceArg} -p <你的测试库密码> "${sql || 'SELECT 1'}"`);
+    console.error(`🛠️ 备选方式：直接通过参数提供一次用户名和密码：`);
+    console.error(`   node scripts/test_mysql_query.js ${serviceArg} -u <测试库用户名> -p <你的测试库密码> "${sql || 'SELECT 1'}"`);
     console.error(`   （一旦握手连通，系统将自动为您静默保存到 ~/.shrimp，下次在此目录即可秒级免密复用）\n`);
     process.exit(1);
   }
+
+  user = user || 'root';
 
   if (!host || !database || !sql) {
     console.error(`❌ 参数不完整！必须指定服务名/主机、目标数据库及要执行的 SQL！`);

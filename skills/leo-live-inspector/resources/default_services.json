@@ -73,8 +73,8 @@
     "realAppId": "beijia-iot-warehouse"
   },
   "智能客服生产日志": {
-    "index": "index-17376-17615*",
-    "cluster": "https://fast104-kibana-logcenter-intra.intra.ke.com",
+    "index": "index-18672-18643*",
+    "cluster": "https://fast103-kibana-logcenter-intra.intra.ke.com",
     "port": "7921",
     "database": "ai_chatbot",
     "dbDesc": "AI智能客服问答库"
@@ -307,5 +307,14 @@
     "index": "index-8464-7683*",
     "cluster": "https://fast108-kibana-logcenter-intra.intra.ke.com",
     "realAppId": "zulin-iot-log"
+  },
+  "iot-auth-gateway": {
+    "index": "index-14046-16241*",
+    "cluster": "https://fast101-kibana-logcenter-intra.intra.ke.com"
+  },
+  "auth-gateway": {
+    "index": "index-14046-16241*",
+    "cluster": "https://fast101-kibana-logcenter-intra.intra.ke.com",
+    "realAppId": "iot-auth-gateway"
   }
 }

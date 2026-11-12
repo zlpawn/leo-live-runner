@@ -9,9 +9,7 @@
  *   3. 📝 三级通道（人机兜底）：探针不可用时，优雅提示手动导入 Chrome 扩展或提供集群/索引。
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -20,28 +18,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 1. 路径与服务注册表定义
-import { loadServiceCatalog, resolveAppId } from './common/services.js';
+import { loadServiceCatalog, resolveAppId, saveLearnedService } from './common/services.js';
 import { ensureBridge } from './cli/lib/cli.mjs';
 import { probePageScript } from './common/fast_probe.js';
 
-const SHRIMP_SKILLS_DIR = path.join(os.homedir(), '.shrimp', 'skills', 'live-runner');
-const USER_SERVICE_MAP_FILE = path.join(SHRIMP_SKILLS_DIR, 'service_map.json');
-
 const LANTERN_BRIDGE_URL = `http://127.0.0.1:${process.env.LEO_LANTERN_PORT || 19527}`;
 const PROBE_BRIDGE_START_TIMEOUT_MS = 15000;
-
-function ensureShrimpDir() {
-  if (!fs.existsSync(SHRIMP_SKILLS_DIR)) {
-    fs.mkdirSync(SHRIMP_SKILLS_DIR, { recursive: true });
-  }
-}
-
-function saveUserServiceMap(map) {
-  ensureShrimpDir();
-  try {
-    fs.writeFileSync(USER_SERVICE_MAP_FILE, JSON.stringify(map, null, 2), 'utf8');
-  } catch (e) {}
-}
 
 const serviceCatalog = loadServiceCatalog();
 
@@ -510,8 +492,7 @@ async function main() {
       isLearned = true;
 
       // 覆盖/更新本地自学习缓存
-      serviceCatalog[opts.app] = { index: targetIndex, cluster: targetCluster };
-      saveUserServiceMap(serviceCatalog);
+      saveLearnedService(opts.app, { index: targetIndex, cluster: targetCluster });
 
       // 使用最新自愈地址重试直连
       try {

@@ -5,7 +5,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,12 +73,31 @@ test('the index probe starts a stopped bridge, runs in its own window and learns
     const types = extension.seen.map((cmd) => cmd.type);
     assert.ok(types.includes('tabs.close'), 'the probe should close its tab, since task.end leaves it open');
     assert.ok(types.indexOf('tabs.close') < types.indexOf('task.end'), 'tabs.close needs the task to still be active');
-    const saved = JSON.parse(fs.readFileSync(path.join(home, '.shrimp/skills/live-runner/service_map.json'), 'utf8'));
-    assert.deepEqual(saved['probe-test-svc'], { index: 'probe-index*', cluster });
+    const saved = JSON.parse(fs.readFileSync(path.join(home, '.shrimp/skills/live-inspector/service_map.json'), 'utf8'));
+    // 只落盘本次学到的条目，内置映射不能被整份复制进用户缓存
+    assert.deepEqual(saved, { 'probe-test-svc': { index: 'probe-index*', cluster } });
   } finally {
     await extension.stop();
     es.closeAllConnections();
     await new Promise((resolve) => es.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the learned map moves from the old live-runner folder and only overrides the fields it has', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'leo-service-map-'));
+  try {
+    const legacy = path.join(home, '.shrimp/skills/live-runner');
+    fs.mkdirSync(legacy, { recursive: true });
+    fs.writeFileSync(path.join(legacy, 'service_map.json'), JSON.stringify({ iot: { index: 'learned-index*' } }));
+    const services = fileURLToPath(new URL('../scripts/common/services.js', import.meta.url));
+    const code = `import(${JSON.stringify(services)}).then((m) => console.log(JSON.stringify(m.loadServiceCatalog().iot)))`;
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env: { ...process.env, HOME: home }, encoding: 'utf8' });
+    const iot = JSON.parse(run.stdout);
+    assert.equal(iot.index, 'learned-index*');
+    assert.equal(iot.realAppId, 'zulin-iot-platform', 'built-in fields survive the learned override');
+    assert.ok(fs.existsSync(path.join(home, '.shrimp/skills/live-inspector/service_map.json')));
+  } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
