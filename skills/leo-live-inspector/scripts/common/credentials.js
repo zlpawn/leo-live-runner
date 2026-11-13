@@ -372,3 +372,23 @@ export function loadShipwrightCookie() {
 export function saveShipwrightCookie(cookieStr) {
   return saveCookie({jsonFileName:'shipwright_cookie.json',cookieStr});
 }
+
+/** 贝壳搜索云平台 (search.ke.com) Cookie 凭证 */
+export function loadSearchCookie() {
+  return loadCookie({
+    envVar: 'SEARCH_COOKIE',
+    jsonFileName: 'search_cookie.json',
+    targetUrl: 'https://search.ke.com/',
+    downloadCandidates: [
+      'cookies-search.ke.com.txt',
+      'cookies.txt'
+    ]
+  });
+}
+
+export function saveSearchCookie(cookieStr) {
+  return saveCookie({
+    jsonFileName: 'search_cookie.json',
+    cookieStr
+  });
+}

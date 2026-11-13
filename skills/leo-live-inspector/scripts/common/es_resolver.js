@@ -1,255 +1,526 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { requestHttp } from './http.js';
-import { resolveAppId, APOLLO_SERVERS } from './services.js';
-import { locateLocalRepository, extractSearchConfigFromLocalRepo } from './local_repo_scanner.js';
 import { classifyEnvironment } from './env_detector.js';
+import { createCredentialSession, isLoginFailure } from './browser_credentials.js';
+import {
+  SHRIMP_LIVE_DIR,
+  loadSearchCookie,
+  saveSearchCookie
+} from './credentials.js';
 
-const ES_CACHE_FILE = path.join(os.homedir(), '.shrimp', 'skills', 'live-inspector', 'es_services_cache.json');
+const DEFAULT_SEARCH_BASE_URL = 'https://search.ke.com';
+const CATALOG_TTL_HOURS = 24;
 
-/**
- * 读取本地 ES 缓存
- */
-export function loadEsCache() {
-  try {
-    if (fs.existsSync(ES_CACHE_FILE)) {
-      return JSON.parse(fs.readFileSync(ES_CACHE_FILE, 'utf8'));
-    }
-  } catch {}
-  return {};
+export function getSearchBaseUrl() {
+  return (process.env.LEO_SEARCH_BASE_URL || DEFAULT_SEARCH_BASE_URL).replace(/\/+$/, '');
+}
+
+export function getEsCatalogFile() {
+  return path.join(SHRIMP_LIVE_DIR, 'es_catalog.json');
+}
+
+export function isSearchAuthFailure(res) {
+  if (isLoginFailure(res)) return true;
+  if (res?.statusCode === 200 && typeof res?.raw === 'string' && /<html|<!doctype/i.test(res.raw)) {
+    if (/login\.ke\.com|passport|统一登录|扫码登录/i.test(res.raw)) return true;
+  }
+  return false;
+}
+
+export function isSearchApiSuccess(res) {
+  if (!res || !Number.isFinite(res.statusCode) || res.statusCode < 200 || res.statusCode >= 300 || res.error) {
+    return false;
+  }
+  return Boolean(res.json && typeof res.json === 'object' && res.json.code === 0);
 }
 
 /**
- * 写入本地 ES 缓存
+ * 创建搜索云平台 (search.ke.com) 凭据会话
  */
-export function saveEsCache(cache) {
-  try {
-    const dir = path.dirname(ES_CACHE_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(ES_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-  } catch {}
-}
-
-/**
- * 通过 Apollo ConfigService 探查微服务的搜索配置 (Tier 1: 零配置秒级探查)
- * @param {string} appId 微服务名
- * @param {'prod'|'test'} env 环境
- */
-export async function fetchSearchConfigFromApollo(appId, env = 'prod') {
-  const apolloBase = APOLLO_SERVERS[env] || APOLLO_SERVERS.prod;
-  const apolloUrl = `${apolloBase}/configfiles/json/${encodeURIComponent(appId)}/default/application`;
-
-  const res = await requestHttp({
-    protocol: new URL(apolloUrl).protocol,
-    hostname: new URL(apolloUrl).hostname,
-    port: new URL(apolloUrl).port || 80,
-    path: new URL(apolloUrl).pathname + new URL(apolloUrl).search,
-    method: 'GET',
-    timeout: 5000
+export function createSearchSession({ explicitCookie = '' } = {}) {
+  const initialCookie = explicitCookie || loadSearchCookie();
+  return createCredentialSession({
+    load: () => initialCookie,
+    save: cookieStr => saveSearchCookie(cookieStr),
+    explicit: Boolean(explicitCookie || process.env.SEARCH_COOKIE),
+    isAuthFailure: isSearchAuthFailure,
+    isSuccess: isSearchApiSuccess
   });
+}
 
-  if (res.statusCode !== 200 || !res.json) {
-    return null;
+async function requestSearchApi(session, apiPath, { method = 'GET', body = null, timeout = 15000 } = {}) {
+  const fullUrl = `${getSearchBaseUrl()}${apiPath}`;
+  const parsed = new URL(fullUrl);
+  return session.run(
+    fullUrl,
+    cookie => requestHttp({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        ...(cookie ? { 'Cookie': cookie } : {})
+      },
+      timeout
+    }, body),
+    { readOnly: true }
+  );
+}
+
+function normalizeAppItem(item) {
+  return {
+    serviceId: String(item.serviceId),
+    appSysCode: item.appSysCode ?? null,
+    name: item.name || '',
+    demandDesc: item.demandDesc || '',
+    accessType: item.accessType || 'pull',
+    engineType: item.engineType || 'es',
+    status: item.status || '',
+    dataDaySize: item.dataDaySize || '',
+    dataTotalSize: item.dataTotalSize || '',
+    roles: {
+      pm: (item.role?.pm || []).map(u => `${u.userName}(${u.userCode})`),
+      rd: (item.role?.rd || []).map(u => `${u.userName}(${u.userCode})`),
+      qa: (item.role?.qa || []).map(u => `${u.userName}(${u.userCode})`)
+    }
+  };
+}
+
+/**
+ * 从 search.ke.com 拉取当前工号已授权的全部 ES 索引目录
+ */
+export async function fetchEsCatalog(session, { auth = true, serviceId = '' } = {}) {
+  const list = [];
+  let page = 1;
+  const size = 50;
+  let total = Infinity;
+
+  while (list.length < total) {
+    const res = await requestSearchApi(session, '/ajax/createApp/getAppList', {
+      method: 'POST',
+      body: { page, size, auth, serviceId }
+    });
+    if (!res?.json || res.json.code !== 0 || !res.json.data) {
+      throw new Error(`拉取搜索云平台索引目录失败: ${res?.json?.message || res?.error || `HTTP ${res?.statusCode}`}`);
+    }
+    const data = res.json.data;
+    total = Number(data.total ?? 0);
+    const batch = Array.isArray(data.appInfo) ? data.appInfo : [];
+    if (batch.length === 0) break;
+    for (const item of batch) {
+      list.push(normalizeAppItem(item));
+    }
+    if (batch.length < size) break;
+    page++;
   }
 
-  const configs = res.json;
-  const result = {
-    source: `Apollo (${apolloBase})`,
-    domain: '',
-    writeDomain: '',
-    services: {}
-  };
-
-  // 1. 尝试解析 searchPlatProperties
-  if (configs.searchPlatProperties) {
+  if (auth && !serviceId && process.env.LEO_INSPECTOR_DISABLE_CACHE !== '1') {
     try {
-      const searchPlat = typeof configs.searchPlatProperties === 'string'
-        ? JSON.parse(configs.searchPlatProperties)
-        : configs.searchPlatProperties;
+      const catalogFile = getEsCatalogFile();
+      fs.mkdirSync(path.dirname(catalogFile), { recursive: true });
+      fs.writeFileSync(catalogFile, JSON.stringify({
+        updated_at: new Date().toISOString(),
+        list
+      }, null, 2), 'utf8');
+    } catch {}
+  }
 
-      if (searchPlat.global?.domain) {
-        result.domain = searchPlat.global.domain;
-      }
-      if (searchPlat.global?.writeDomain) {
-        result.writeDomain = searchPlat.global.writeDomain;
-      }
+  return list;
+}
 
-      if (searchPlat.serviceConfig) {
-        for (const [key, cfg] of Object.entries(searchPlat.serviceConfig)) {
-          const serviceId = cfg.serviceId || key;
-          const entry = {
-            bizKey: key,
-            serviceId: String(serviceId),
-            token: cfg.token || '',
-            writeToken: cfg.writeToken || '',
-            domain: cfg.domain || result.domain,
-            suffix: cfg.suffix || ''
-          };
-          result.services[key] = entry;
-          result.services[String(serviceId)] = entry;
+/**
+ * 读取本地缓存或从云平台刷新索引目录
+ */
+export async function loadEsCatalog(session, { forceRefresh = false } = {}) {
+  const catalogFile = getEsCatalogFile();
+  if (!forceRefresh && fs.existsSync(catalogFile)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
+      if (Array.isArray(cached.list) && cached.list.length > 0) {
+        const ageHours = (Date.now() - new Date(cached.updated_at).getTime()) / (1000 * 3600);
+        if (ageHours < CATALOG_TTL_HOURS) {
+          return { list: cached.list, fromCache: true };
         }
       }
     } catch {}
   }
-
-  // 2. 尝试从扁平 key 中提取 search.domain / search.token 等
-  for (const [key, val] of Object.entries(configs)) {
-    if (key === 'search.domain' && !result.domain) {
-      result.domain = String(val).trim();
-    } else if (key === 'search.write-domain' && !result.writeDomain) {
-      result.writeDomain = String(val).trim();
-    } else if (key.startsWith('search.token.')) {
-      const serviceId = key.replace('search.token.', '').trim();
-      if (!result.services[serviceId]) {
-        result.services[serviceId] = { serviceId, token: String(val).trim() };
-      } else {
-        result.services[serviceId].token = String(val).trim();
-      }
-    } else if (key.startsWith('search.write-token.')) {
-      const serviceId = key.replace('search.write-token.', '').trim();
-      if (!result.services[serviceId]) {
-        result.services[serviceId] = { serviceId, writeToken: String(val).trim() };
-      } else {
-        result.services[serviceId].writeToken = String(val).trim();
-      }
-    }
-  }
-
-  // 默认写域名推导保底
-  if (!result.writeDomain && result.domain) {
-    if (result.domain.includes('-gw.')) {
-      result.writeDomain = result.domain.replace('-gw.', '-stream.');
-    } else if (result.domain.includes('search-zuul.')) {
-      result.writeDomain = result.domain.replace('search-zuul.', 'search-zuul-write.');
-    }
-  }
-
-  if (result.domain || Object.keys(result.services).length > 0) {
-    return result;
-  }
-
-  return null;
+  const list = await fetchEsCatalog(session);
+  return { list, fromCache: false };
 }
 
 /**
- * 统一解析并返回某个微服务的 ES 搜索配置
- * 顺序：Apollo 远程嗅探 -> 本地多目录代码扫描 -> 本地缓存
- * @param {string} rawAppId 应用名或别名
- * @param {'prod'|'test'} env 环境
+ * 按 serviceId、系统号、索引名称或描述关键词匹配目录项
  */
-export async function resolveEsConfig(rawAppId, env = 'prod') {
-  const appId = resolveAppId(rawAppId) || rawAppId;
-  const cacheKey = `${appId}:${env}`;
-  const cache = loadEsCache();
+export function findCatalogMatches(catalog, query) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const lower = q.toLowerCase();
 
-  // 1. Tier 1: 直连 Apollo 配置中心
+  const exactServiceId = catalog.filter(item => item.serviceId === q);
+  if (exactServiceId.length > 0) return exactServiceId;
+
+  const exactSysCode = catalog.filter(item => item.appSysCode !== null && String(item.appSysCode) === q);
+  if (exactSysCode.length > 0) return exactSysCode;
+
+  const exactName = catalog.filter(item => item.name.toLowerCase() === lower);
+  if (exactName.length > 0) return exactName;
+
+  const scored = [];
+  for (const item of catalog) {
+    const nameLower = item.name.toLowerCase();
+    const descLower = item.demandDesc.toLowerCase();
+    let score = 0;
+    if (nameLower.startsWith(lower)) score = 3;
+    else if (nameLower.includes(lower)) score = 2;
+    else if (descLower.includes(lower) || item.serviceId.includes(q)) score = 1;
+    if (score > 0) scored.push({ item, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(s => s.item);
+}
+
+async function fetchBasicInfo(session, serviceId) {
+  const res = await requestSearchApi(
+    session,
+    `/ajax/detailSearchQA/getBasicInfo?serviceId=${encodeURIComponent(serviceId)}`
+  );
+  if (res?.json?.code === 0 && res.json.data) {
+    return res.json.data;
+  }
+  return null;
+}
+
+function pickActiveVersion(versionPayload) {
+  const list = Array.isArray(versionPayload)
+    ? versionPayload
+    : (Array.isArray(versionPayload?.version) ? versionPayload.version : []);
+  if (list.length === 0) return null;
+  return list.find(v => v.status === 'on') || list[0];
+}
+
+async function resolveProdConfig(session, serviceId, accessType) {
+  const verRes = await requestSearchApi(
+    session,
+    `/ajax/detailSearchQA/getVersionList?serviceId=${encodeURIComponent(serviceId)}`
+  );
+  if (!verRes?.json || verRes.json.code !== 0) {
+    throw new Error(`获取线上版本列表失败 (serviceId=${serviceId}): ${verRes?.json?.message || verRes?.error || `HTTP ${verRes?.statusCode}`}`);
+  }
+  const active = pickActiveVersion(verRes.json.data);
+  if (!active || active.version === undefined) {
+    throw new Error(`索引 [${serviceId}] 暂无可用的线上配置版本`);
+  }
+
+  const cfgRes = await requestSearchApi(
+    session,
+    `/ajax/detailSearchQA/getConfig?accessType=${encodeURIComponent(accessType)}&version=${encodeURIComponent(active.version)}&serviceId=${encodeURIComponent(serviceId)}`,
+    { timeout: 45000 }
+  );
+  if (!cfgRes?.json || cfgRes.json.code !== 0 || !cfgRes.json.data) {
+    throw new Error(`获取线上索引详情失败 (serviceId=${serviceId}, v=${active.version}): ${cfgRes?.json?.message || cfgRes?.error || `HTTP ${cfgRes?.statusCode}`}`);
+  }
+  return {
+    channel: 'detailSearchQA',
+    version: active.version,
+    config: cfgRes.json.data
+  };
+}
+
+async function resolveTestConfig(session, serviceId, accessType, preferredRole = '') {
+  const role = String(preferredRole || '').trim().toLowerCase();
+  const channels = role === 'rd'
+    ? ['detailBusinessRD', 'detailBusinessQA']
+    : role === 'qa'
+      ? ['detailBusinessQA', 'detailBusinessRD']
+      : ['detailBusinessQA', 'detailBusinessRD'];
+
+  const errors = [];
+  for (const channel of channels) {
+    const verRes = await requestSearchApi(
+      session,
+      `/ajax/${channel}/getVersionList?serviceId=${encodeURIComponent(serviceId)}`
+    );
+    if (!verRes?.json || verRes.json.code !== 0) {
+      errors.push(`${channel}/getVersionList: ${verRes?.json?.message || verRes?.error || `HTTP ${verRes?.statusCode}`}`);
+      continue;
+    }
+    const active = pickActiveVersion(verRes.json.data);
+    if (!active || active.version === undefined) {
+      errors.push(`${channel}: 无可用版本`);
+      continue;
+    }
+    const cfgRes = await requestSearchApi(
+      session,
+      `/ajax/${channel}/getConfig?accessType=${encodeURIComponent(accessType)}&version=${encodeURIComponent(active.version)}&serviceId=${encodeURIComponent(serviceId)}`,
+      { timeout: 45000 }
+    );
+    if (!cfgRes?.json || cfgRes.json.code !== 0 || !cfgRes.json.data?.search) {
+      errors.push(`${channel}/getConfig(v${active.version}): ${cfgRes?.json?.message || cfgRes?.error || `HTTP ${cfgRes?.statusCode}`}`);
+      continue;
+    }
+    return {
+      channel,
+      version: active.version,
+      config: cfgRes.json.data
+    };
+  }
+
+  throw new Error(`获取测试环境索引配置失败 (serviceId=${serviceId}): ${errors.join(' ; ')}`);
+}
+
+export function isEsDslUrl(searchUrl) {
+  if (!searchUrl || typeof searchUrl !== 'string') return false;
   try {
-    const apolloConfig = await fetchSearchConfigFromApollo(appId, env);
-    if (apolloConfig && (apolloConfig.domain || Object.keys(apolloConfig.services).length > 0)) {
-      cache[cacheKey] = {
-        appId,
-        env,
-        updatedAt: Date.now(),
-        ...apolloConfig
+    const pathname = new URL(searchUrl).pathname.replace(/\/+$/, '');
+    return pathname.endsWith('/search/es');
+  } catch {
+    return /\/search\/es\/?$/i.test(searchUrl.trim());
+  }
+}
+
+/**
+ * 通过 search.ke.com 解析目标 ES 索引的网关、Token、Mapping 与上下文元数据
+ */
+export async function resolveEsTarget(targetKey, env = 'prod', options = {}) {
+  const normalizedKey = String(targetKey || '').trim();
+  if (!normalizedKey) {
+    throw new Error('缺少索引标识参数！请传入 serviceId（如 1036710001）或索引名称关键词（如 订单、门锁）。');
+  }
+
+  const requestedEnv = String(env || 'prod').trim().toLowerCase() === 'test' ? 'test' : 'prod';
+  const session = options.session || createSearchSession({ explicitCookie: options.cookie });
+
+  let meta = null;
+  let candidates = [];
+
+  const { list: initialCatalog, fromCache } = await loadEsCatalog(session, { forceRefresh: Boolean(options.refresh) });
+  candidates = findCatalogMatches(initialCatalog, normalizedKey);
+
+  if (candidates.length === 0 && fromCache && !options.refresh) {
+    const { list: refreshedCatalog } = await loadEsCatalog(session, { forceRefresh: true });
+    candidates = findCatalogMatches(refreshedCatalog, normalizedKey);
+  }
+
+  if (candidates.length > 0) {
+    meta = candidates[0];
+  } else if (/^\d+$/.test(normalizedKey)) {
+    const basic = await fetchBasicInfo(session, normalizedKey);
+    if (basic) {
+      meta = {
+        serviceId: String(basic.serviceId || normalizedKey),
+        appSysCode: null,
+        name: basic.name || '',
+        demandDesc: '',
+        accessType: basic.accessType || 'pull',
+        engineType: basic.engineType || 'es',
+        status: ''
       };
-      saveEsCache(cache);
-      return cache[cacheKey];
-    }
-  } catch {}
-
-  // 2. Tier 2: 本地多工程仓库目录自动嗅探
-  try {
-    const repoDir = locateLocalRepository(appId);
-    if (repoDir) {
-      const localConfig = extractSearchConfigFromLocalRepo(repoDir, env);
-      if (localConfig && (localConfig.domain || Object.keys(localConfig.services).length > 0)) {
-        cache[cacheKey] = {
-          appId,
-          env,
-          source: `Local Repo (${path.basename(repoDir)})`,
-          updatedAt: Date.now(),
-          ...localConfig
-        };
-        saveEsCache(cache);
-        return cache[cacheKey];
-      }
-    }
-  } catch {}
-
-  // 3. Tier 3: 命中本地历史缓存
-  if (cache[cacheKey]) {
-    return cache[cacheKey];
-  }
-
-  return null;
-}
-
-/**
- * 定位特定的 ES 服务信息（按 serviceId 或 业务名 如 lock、water-meter 查找）
- * @param {string} appId 应用名
- * @param {string} serviceKeyOrId 业务关键词或数字 serviceId
- * @param {'prod'|'test'} env 环境
- */
-export async function resolveEsTarget(appId, serviceKeyOrId, env = 'prod') {
-  const config = await resolveEsConfig(appId, env);
-  if (!config) {
-    throw new Error(`未找到微服务 [${appId}] 在 [${env}] 环境下的 ES 搜索配置！请检查微服务名或本地工程。`);
-  }
-
-  let serviceEntry = null;
-
-  if (serviceKeyOrId) {
-    const searchKey = String(serviceKeyOrId).trim().toLowerCase();
-    // 精确查找
-    if (config.services[searchKey]) {
-      serviceEntry = config.services[searchKey];
-    } else {
-      // 模糊匹配
-      for (const [k, v] of Object.entries(config.services)) {
-        if (k.toLowerCase().includes(searchKey) || (v.bizKey && v.bizKey.toLowerCase().includes(searchKey))) {
-          serviceEntry = v;
-          break;
-        }
-      }
-    }
-  } else {
-    // 未指定时，如果只有一个服务就默认选用；否则列出供选择
-    const keys = Object.keys(config.services).filter(k => isNaN(Number(k)));
-    if (keys.length === 1) {
-      serviceEntry = config.services[keys[0]];
     }
   }
 
-  if (!serviceEntry) {
-    const available = Object.keys(config.services)
-      .map(k => `${k} (id: ${config.services[k].serviceId})`)
-      .join(', ');
-    throw new Error(`微服务 [${appId}] 下未匹配到指定 ES 服务 [${serviceKeyOrId}]！可用服务列表: ${available || '无'}`);
+  if (!meta) {
+    throw new Error(`在 search.ke.com 未匹配到与 [${normalizedKey}] 相关的 ES 索引！可先执行 --list-indexes 查看当前工号已授权索引列表。`);
   }
 
-  const domain = serviceEntry.domain || config.domain;
-  const writeDomain = config.writeDomain || (domain.includes('-gw.') ? domain.replace('-gw.', '-stream.') : domain);
-  const suffix = serviceEntry.suffix || '';
-  const searchUrl = `${domain.replace(/\/+$/, '')}/api/${serviceEntry.serviceId}${suffix}/search`;
-  const writeUrl = `${writeDomain.replace(/\/+$/, '')}/api/data/${serviceEntry.serviceId}`;
+  let accessType = meta.accessType || 'pull';
+  if (!meta.accessType) {
+    const basic = await fetchBasicInfo(session, meta.serviceId);
+    if (basic?.accessType) accessType = basic.accessType;
+  }
 
-  // 严格根据最终 URL 重新计算真实环境归属
-  const detectedEnv = classifyEnvironment(domain);
+  const resolved = requestedEnv === 'test'
+    ? await resolveTestConfig(session, meta.serviceId, accessType, options.role)
+    : await resolveProdConfig(session, meta.serviceId, accessType);
+
+  const cfg = resolved.config;
+  const searchUrl = String(cfg.search || '').trim();
+  if (!searchUrl) {
+    throw new Error(`索引 [${meta.serviceId}] (${resolved.channel} v${resolved.version}) 未配置查询地址 (search)`);
+  }
+
+  const detectedEnv = classifyEnvironment(searchUrl);
+  const gatewayMode = isEsDslUrl(searchUrl) ? 'es-dsl' : 'search-gw';
+
+  let writeUrl = String(cfg.push || '').trim();
+  if (!writeUrl && detectedEnv === 'test') {
+    if (searchUrl.includes('-gw.')) {
+      writeUrl = searchUrl.replace('-gw.', '-stream.').replace(/\/search(\/es)?$/, '');
+    } else if (searchUrl.includes('search-zuul.')) {
+      writeUrl = searchUrl.replace('search-zuul.', 'search-zuul-write.').replace(/\/api\/([^/]+)\/search(\/es)?$/, '/api/data/$1');
+    }
+  }
 
   return {
-    appId: config.appId,
+    serviceId: meta.serviceId,
+    appSysCode: meta.appSysCode,
+    name: meta.name,
+    demandDesc: meta.demandDesc,
+    accessType,
     env: detectedEnv,
-    serviceId: serviceEntry.serviceId,
-    bizKey: serviceEntry.bizKey || serviceKeyOrId,
-    token: serviceEntry.token,
-    writeToken: serviceEntry.writeToken || serviceEntry.token,
-    domain,
-    writeDomain,
+    requestedEnv,
+    version: resolved.version,
+    configSource: `${getSearchBaseUrl()} (${resolved.channel} v${resolved.version})`,
     searchUrl,
+    token: String(cfg.searchToken || '').trim(),
     writeUrl,
-    source: config.source
+    writeToken: String(cfg.pushToken || cfg.streamZuulToken || cfg.searchToken || '').trim(),
+    gatewayMode,
+    mapping: cfg.mapping || {},
+    routingField: cfg.routingField || null,
+    searchCount: cfg.searchCount ?? null,
+    readLimit: cfg.readLimit ?? null,
+    topQps: cfg.topQps ?? null,
+    storeSize: cfg.storeSize ?? null,
+    indexName: cfg.indexName || '',
+    binlogSource: Array.isArray(cfg.binlogSource) ? cfg.binlogSource : [],
+    gidApiTask: cfg.gidApiTask || null,
+    godApiTask: cfg.godApiTask || null,
+    candidates: candidates.length > 1 ? candidates : []
+  };
+}
+
+function coerceFilterValue(rawVal, fieldType) {
+  const val = rawVal.trim();
+  if (fieldType === 'boolean') {
+    if (val === 'true') return true;
+    if (val === 'false') return false;
+  }
+  if (['integer', 'long', 'short', 'byte'].includes(fieldType) && /^-?\d+$/.test(val)) {
+    return Number(val);
+  }
+  if (['float', 'double'].includes(fieldType) && /^-?\d+(\.\d+)?$/.test(val)) {
+    return Number(val);
+  }
+  return val;
+}
+
+export function parseFilterPairs(filterStr) {
+  if (!filterStr || typeof filterStr !== 'string') return [];
+  return filterStr
+    .split(',')
+    .map(pair => {
+      const idx = pair.indexOf(':');
+      if (idx === -1) return null;
+      const field = pair.slice(0, idx).trim();
+      const value = pair.slice(idx + 1).trim();
+      return field ? { field, value } : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * 根据网关模式（search-gw vs es-dsl）构造检索请求体
+ */
+export function buildSearchRequest(target, opts = {}) {
+  const page = Math.max(1, Number(opts.page) || 1);
+  const size = Math.min(100, Math.max(1, Number(opts.size) || 10));
+  const filterPairs = parseFilterPairs(opts.filter);
+
+  if (opts.dsl) {
+    let parsedDsl;
+    try {
+      parsedDsl = typeof opts.dsl === 'string' ? JSON.parse(opts.dsl) : { ...opts.dsl };
+    } catch (err) {
+      throw new Error(`--dsl JSON 格式非法: ${err.message}`);
+    }
+    if (target.gatewayMode === 'es-dsl') {
+      if (parsedDsl.from === undefined) parsedDsl.from = (page - 1) * size;
+      if (parsedDsl.size === undefined) parsedDsl.size = size;
+    } else {
+      if (parsedDsl.page === undefined) parsedDsl.page = page - 1;
+      if (parsedDsl.size === undefined) parsedDsl.size = size;
+    }
+    return parsedDsl;
+  }
+
+  if (target.gatewayMode === 'es-dsl') {
+    const must = [];
+    if (opts.query) {
+      must.push({ query_string: { query: String(opts.query) } });
+    }
+    for (const { field, value } of filterPairs) {
+      const fieldType = target.mapping?.[field]?.type;
+      must.push({
+        term: {
+          [field]: coerceFilterValue(value, fieldType)
+        }
+      });
+    }
+
+    const body = {
+      from: (page - 1) * size,
+      size,
+      query: must.length === 0
+        ? { match_all: {} }
+        : (must.length === 1 ? must[0] : { bool: { must } })
+    };
+
+    if (Array.isArray(opts.sourceFields) && opts.sourceFields.length > 0) {
+      body._source = opts.sourceFields;
+    } else if (opts.excludeVectors && target.mapping) {
+      const vectorFields = Object.entries(target.mapping)
+        .filter(([, meta]) => meta?.type === 'dense_vector')
+        .map(([name]) => name);
+      if (vectorFields.length > 0) {
+        body._source = { excludes: vectorFields };
+      }
+    }
+    return body;
+  }
+
+  const body = {
+    page: page - 1,
+    size
+  };
+  if (opts.query) {
+    body.query = String(opts.query);
+  }
+  if (filterPairs.length > 0) {
+    body.filters = {
+      and: filterPairs.map(({ field, value }) => ({
+        field,
+        values: [value],
+        operator: 'IN'
+      }))
+    };
+  }
+  return body;
+}
+
+/**
+ * 统一解析 search-gw 与 es-dsl 两类网关响应
+ */
+export function parseSearchResponse(target, json) {
+  if (!json || typeof json !== 'object') {
+    throw new Error('ES 网关返回非 JSON 数据');
+  }
+
+  if (target.gatewayMode === 'es-dsl') {
+    if (json.code !== undefined && json.code !== 0) {
+      throw new Error(`ES 网关异常 (code: ${json.code}): ${json.message || json.msg || '未知错误'}`);
+    }
+    if (json.error) {
+      const errMsg = typeof json.error === 'string' ? json.error : (json.error.reason || JSON.stringify(json.error));
+      throw new Error(`ES 查询错误: ${errMsg}`);
+    }
+    const rawTotal = json.hits?.total;
+    const total = typeof rawTotal === 'number' ? rawTotal : (rawTotal?.value ?? 0);
+    const hits = Array.isArray(json.hits?.hits) ? json.hits.hits : [];
+    const docs = hits.map(hit => ({
+      ...(hit._id !== undefined ? { _id: hit._id } : {}),
+      ...(hit._source || {})
+    }));
+    return { total, docs };
+  }
+
+  if (json.code !== 0) {
+    throw new Error(`ES 平台业务异常 (code: ${json.code}): ${json.msg || json.message || '未知错误'}`);
+  }
+  return {
+    total: json.data?.total ?? 0,
+    docs: Array.isArray(json.data?.docs) ? json.data.docs : []
   };
 }

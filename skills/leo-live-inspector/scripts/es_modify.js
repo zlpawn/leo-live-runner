@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
-import { resolveEsTarget } from './common/es_resolver.js';
+import {
+  resolveEsTarget,
+  buildSearchRequest,
+  parseSearchResponse
+} from './common/es_resolver.js';
 import { requestHttp } from './common/http.js';
-import { assertWritePermitted, classifyEnvironment } from './common/env_detector.js';
+import { assertWritePermitted } from './common/env_detector.js';
 
 function printHelp() {
   console.log(`
@@ -14,26 +18,27 @@ function printHelp() {
   - 测试环境修改强制采用两阶段确认：未传 --confirm 时仅执行 Pre-flight (Dry-Run) 并展示 Diff。
 
 用法:
-  node scripts/es_modify.js -a <appId> -s <serviceKey> --action <action> --id <docId> [选项]
+  node scripts/es_modify.js <serviceId|关键词> --action <action> --id <docId> [选项]
 
 核心场景示例:
   1. 测试环境更新部分字段 (Dry-Run 预审模式):
-     node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 88}' -e test
+     node scripts/es_modify.js 1013810021 --action update-part --id "10001" --data '{"battery": 88}' -e test
 
   2. 测试环境确认提交更新:
-     node scripts/es_modify.js -a iot-platform -s lock --action update-part --id "10001" --data '{"battery": 88}' -e test --confirm
+     node scripts/es_modify.js 1013810021 --action update-part --id "10001" --data '{"battery": 88}' -e test --confirm
 
   3. 测试环境删除记录 (预审与确认):
-     node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -e test
-     node scripts/es_modify.js -a iot-platform -s lock --action delete --id "10001" -e test --confirm
+     node scripts/es_modify.js 门锁 --action delete --id "10001" -e test
+     node scripts/es_modify.js 门锁 --action delete --id "10001" -e test --confirm
 
 选项说明:
-  -a, --app <appId>             目标微服务名或别名 (如 zulin-iot-platform, iot-platform)
-  -s, --service <serviceKey>    目标业务键名或 serviceId (如 lock, 1030902020)
+  -s, --service <target>        目标 serviceId 或索引名称关键词 (也可直接作为位置参数传入)
   -e, --env <test|prod>         目标环境 (必须为 test，prod 会被物理拦截)
+      --role <qa|rd>            测试环境配置视角优先级 (默认自动尝试 QA -> RD)
       --action <action>         动作类型: insert | update | update-part | delete
       --id <docId>              文档主键 ID (对应 ES 索引中的唯一主键)
       --data <json|@file.json>  写入的数据 JSON 字符串或 @文件路径
+      --cookie <cookie>         单次临时覆盖 search.ke.com Cookie
       --confirm                 确认正式提交写入 (未加时仅输出 Dry-Run Diff 对比)
   -h, --help                    查看帮助信息
 `);
@@ -42,12 +47,13 @@ function printHelp() {
 function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {
-    appId: '',
-    serviceKey: '',
+    target: '',
     env: 'test',
+    role: '',
     action: '',
     id: '',
     data: '',
+    cookie: '',
     confirm: false
   };
 
@@ -58,18 +64,24 @@ function parseCliArgs() {
     if (arg === '-h' || arg === '--help') {
       printHelp();
       process.exit(0);
-    } else if (arg === '-a' || arg === '--app') {
-      options.appId = args[++i];
     } else if (arg === '-s' || arg === '--service') {
-      options.serviceKey = args[++i];
+      options.target = args[++i] || '';
+    } else if (arg === '-a' || arg === '--app') {
+      // 兼容旧参数：若同时未传 -s，则保留但提醒以索引为入口
+      if (!options.target) options.target = args[++i] || '';
+      else args[++i];
     } else if (arg === '-e' || arg === '--env') {
-      options.env = args[++i];
+      options.env = args[++i] || 'test';
+    } else if (arg === '--role') {
+      options.role = args[++i] || '';
     } else if (arg === '--action') {
       options.action = (args[++i] || '').toLowerCase();
     } else if (arg === '--id') {
-      options.id = args[++i];
+      options.id = args[++i] || '';
     } else if (arg === '--data') {
-      options.data = args[++i];
+      options.data = args[++i] || '';
+    } else if (arg === '--cookie') {
+      options.cookie = args[++i] || '';
     } else if (arg === '--confirm') {
       options.confirm = true;
     } else if (!arg.startsWith('-')) {
@@ -77,8 +89,9 @@ function parseCliArgs() {
     }
   }
 
-  if (!options.appId && positionals.length > 0) options.appId = positionals[0];
-  if (!options.serviceKey && positionals.length > 1) options.serviceKey = positionals[1];
+  if (!options.target && positionals.length > 0) {
+    options.target = positionals.join(' ');
+  }
 
   return options;
 }
@@ -88,6 +101,11 @@ function parseCliArgs() {
  */
 async function fetchCurrentDoc(target, docId) {
   try {
+    const reqBody = buildSearchRequest(target, {
+      query: docId,
+      page: 1,
+      size: 10
+    });
     const urlObj = new URL(target.searchUrl);
     const res = await requestHttp({
       protocol: urlObj.protocol,
@@ -97,20 +115,15 @@ async function fetchCurrentDoc(target, docId) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json;charset=UTF-8',
-        'token': target.token
+        ...(target.token ? { 'token': target.token } : {})
       },
       timeout: 5000
-    }, {
-      query: docId,
-      page: 0,
-      size: 10
-    });
+    }, reqBody);
 
-    if (res.statusCode === 200 && res.json?.data?.docs) {
-      const docs = res.json.data.docs;
-      // 优先匹配主键字段与 docId 一致的
+    if (res.statusCode >= 200 && res.statusCode < 300 && res.json) {
+      const { docs } = parseSearchResponse(target, res.json);
       const matched = docs.find(d =>
-        String(d.id || d.lockId || d.houseId || d.orderId || '') === String(docId)
+        String(d._id || d.id || d.lockId || d.houseId || d.orderId || d.order_code || '') === String(docId)
       );
       return matched || docs[0] || null;
     }
@@ -118,11 +131,21 @@ async function fetchCurrentDoc(target, docId) {
   return null;
 }
 
+function blockProductionWrite(reason, writeUrl = '') {
+  console.error('\n' + '='.repeat(68));
+  console.error('🚨【风控红线拦截】生产环境 (PROD) 严格禁止执行任何新增/修改/删除操作！');
+  console.error(`📌 拦截原因: ${reason}`);
+  if (writeUrl) console.error(`🔗 目标写入网关: ${writeUrl}`);
+  console.error('💡 线上生产环境仅支持只读查询，请使用 scripts/es_query.js 进行排查。');
+  console.error('='.repeat(68) + '\n');
+  process.exit(1);
+}
+
 async function main() {
   const opts = parseCliArgs();
 
-  if (!opts.appId) {
-    console.error('❌ 缺少必须参数: 微服务名 (-a / --app <appId>)');
+  if (!opts.target) {
+    console.error('❌ 缺少必须参数: 目标 serviceId 或索引名称关键词');
     printHelp();
     process.exit(1);
   }
@@ -145,19 +168,26 @@ async function main() {
     process.exit(1);
   }
 
-  // 1. 解析目标服务配置
-  const target = await resolveEsTarget(opts.appId, opts.serviceKey, opts.env);
+  const normDeclared = String(opts.env || '').trim().toLowerCase();
+  if (normDeclared === 'prod' || normDeclared === 'production' || normDeclared === 'online') {
+    blockProductionWrite('用户显式指定了生产环境 (-e prod)，严格禁止执行写操作！');
+  }
+
+  // 1. 解析目标索引配置
+  const target = await resolveEsTarget(opts.target, opts.env, {
+    role: opts.role,
+    cookie: opts.cookie
+  });
+
+  if (!target.writeUrl) {
+    console.error(`❌ 索引 [${target.name || target.serviceId}] (${target.configSource}) 未配置数据推送/写入网关 (push)，无法执行修改！`);
+    process.exit(1);
+  }
 
   // 2. 🛡️ 核心风控安全检查 (严格拦截线上写操作)
   const writeCheck = assertWritePermitted(opts.env, target.writeUrl);
   if (!writeCheck.allowed) {
-    console.error('\n' + '='.repeat(68));
-    console.error('🚨【风控红线拦截】生产环境 (PROD) 严格禁止执行任何新增/修改/删除操作！');
-    console.error(`📌 拦截原因: ${writeCheck.reason}`);
-    console.error(`🔗 目标写入网关: ${target.writeUrl}`);
-    console.error('💡 线上生产环境仅支持只读查询，请使用 scripts/es_query.js 进行排查。');
-    console.error('='.repeat(68) + '\n');
-    process.exit(1);
+    blockProductionWrite(writeCheck.reason, target.writeUrl);
   }
 
   // 3. 解析传入的数据 (若为 insert/update)
@@ -191,8 +221,8 @@ async function main() {
   if (!opts.confirm) {
     console.log(`\n================================================================`);
     console.log(`🔍 Pre-flight Dry-Run (安全预审模式 - 暂未写入)`);
-    console.log(`🎯 目标微服务: [${target.appId}] | 业务: [${target.bizKey}] (ID: ${target.serviceId})`);
-    console.log(`🌐 目标环境: 🟡 测试环境 (TEST)`);
+    console.log(`🎯 目标索引: [${target.name || target.serviceId}] (ID: ${target.serviceId})`);
+    console.log(`🌐 目标环境: 🟡 测试环境 (TEST) | 配置来源: ${target.configSource}`);
     console.log(`🔗 写入网关: ${target.writeUrl}`);
     console.log(`⚡ 拟执行动作: ${opts.action.toUpperCase()} (文档ID: ${opts.id})`);
     console.log(`================================================================\n`);
@@ -228,7 +258,6 @@ async function main() {
   // 6. 阶段二：带 --confirm 时正式提交写入
   console.log(`\n🚀 正在向测试环境 ES 写入数据...`);
 
-  // 映射动作代号: UPDATE, UPDATE_PART, DELETE
   let apiAction = 'UPDATE_PART';
   if (opts.action === 'insert' || opts.action === 'update') {
     apiAction = 'UPDATE';
@@ -258,20 +287,19 @@ async function main() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json;charset=UTF-8',
-      'token': target.writeToken
+      ...(target.writeToken ? { 'token': target.writeToken } : {})
     },
     timeout: 8000
   }, requestBody);
 
   const durationMs = Date.now() - startTime;
 
-  if (res.statusCode !== 200) {
+  if (res.statusCode < 200 || res.statusCode >= 300) {
     console.error(`❌ ES 写入网关响应异常 (HTTP ${res.statusCode}):`, res.raw);
     process.exit(1);
   }
 
   const json = res.json;
-  // 贝壳写网关成功通常为 code: 0 或 code: 1(但包含成功响应), 检查 message
   if (json && json.code !== 0 && json.code !== 1 && !json.success) {
     console.error(`❌ 写入失败 (code: ${json.code}): ${json.message || json.msg || res.raw}`);
     process.exit(1);
@@ -281,7 +309,7 @@ async function main() {
 
   // 7. 回查验证 (Verification Step)
   console.log(`🔍 正在回查验证最新状态...`);
-  await new Promise(r => setTimeout(r, 800)); // 等待 ES 刷新
+  await new Promise(r => setTimeout(r, 800));
 
   const afterDoc = await fetchCurrentDoc(target, opts.id);
   if (afterDoc) {
