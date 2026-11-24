@@ -1,6 +1,6 @@
 ---
 name: leo-live-inspector
-description: 线上与测试环境全场景数据探查、全链路排障与配置/基建协同治理中枢。涵盖：(1) FAST/Kibana 日志检索、出入参抓取与 500 排查；(2) TraceId 链路回溯与 Mermaid 时序图；(3) 灯塔 ARMS 前端监控（异常榜、ViewId 追踪、Web Vitals 性能、API 慢请求）；(4) Apollo 配置探查、发布轨迹与变更参谋；(5) ES 搜索云、Luke 权限中心、白鸽网关、UC 组织画像与测试账号治理；(6) Kafka 探查、Dinsight 大数据查数、CI/CD 部署闭环与排查流程沉淀。用于线上/测试环境排障、查日志、追链路、查改配置、中台基建治理与流程复用。
+description: 线上与测试环境全场景数据探查、全链路排障与配置/基建协同治理中枢。涵盖：(1) FAST/Kibana 日志检索、出入参抓取与 500 排查；(2) TraceId 链路回溯与 Mermaid 时序图；(3) 灯塔 ARMS 前端监控（异常榜、ViewId 追踪、Web Vitals 性能、API 慢请求）；(4) Apollo 配置探查、发布轨迹与变更参谋；(5) ES 搜索云、Luke 权限中心、白鸽网关、UC 组织画像与测试账号治理；(6) Kafka 探查、Dinsight 大数据查数、CI/CD 部署闭环；(7) ONES 研发管理平台的需求/缺陷/排期查询与两阶段确认式协作（新建需求、提缺陷、改排期）；(8) 排查流程沉淀。用于线上/测试环境排障、查日志、追链路、查改配置、中台基建治理与研发过程协作。
 ---
 
 # 🔍 Leo Live Inspector (线上数据探查、日志检索、Trace 链路透视与协同治理中枢)
@@ -17,7 +17,7 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 > - **AI 必须在后台自动解析意图并主动执行对应脚本**，提取结构化数据并交付表格与结论，切勿在回复中输出“请您手动在终端运行 node scripts/...”等言论。
 > 
 > 🚨 **【核心鉴权铁律：零外部工具依赖，严禁使用 opencli / ego-browser / 外部自动化浏览器】**
-> - **自包含内生闭环**：所有登录态仅通过内部脚本与随附 Chrome 扩展（`Leo cookie.txt Locally`）经本地桥接 `127.0.0.1:19527` 通信完成获取与自动落盘；
+> - **自包含内生闭环**：所有登录态仅通过内部脚本与随附 Chrome 扩展（`Leo cookie.txt Locally`）经本地桥接 `127.0.0.1:19526`（扩展同时兼听 19526/19527）通信完成获取与自动落盘；
 > - **严禁调用任何外部浏览器驱动工具**（如 `opencli`、`ego-browser`、`puppeteer` 等），避免触发 SSO 风控拦截及破坏用户正常办公体验。
 
 ### 🔴 线上生产环境 (PROD) 安全原则：物理只读与变更参谋
@@ -90,6 +90,16 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 | **“用 Dinsight 查近 7 天北京成交量”** | `node scripts/dinsight_query.js "近7天北京成交量"` | 自然语言查数结论，含工具调用与 SSE 摘要 | [dinsight-query-guide.md](references/dinsight-query-guide.md) |
 | **“在这个页面上抓数据 / 测一下 / 导出长图”** | `node scripts/cli/index.mjs state` / `eval` / `screenshot` / `net-start` | 驱动真实 Chrome 执行结构化数据抓取与 API 嗅探 (线上一律只读) | [browser-guide.md](references/browser-guide.md) |
 | **“查下钥匙箱 860734086841437 腾讯云状态与最新报文”** | `node scripts/tencent_iot_query.js 860734086841437 -n 5` | 设备在线状态、核心已订阅 Topic 报文解码与流转明细 | [tencent-iot-guide.md](references/tencent-iot-guide.md) |
+| **“看下我这个月/这周的排期”** | `node scripts/ones_query.js schedule --from 2026-11-01 --to 2026-11-30` | 按时窗过滤的估时条目 + 按需求聚合的交付窗口与总人天 | [ones-guide.md](references/ones-guide.md) |
+| **“查下需求 50564297 / 钥匙箱那个需求什么状态”** | `node scripts/ones_query.js req <id\|标题关键词>` | 状态、优先级、产品经理、迭代、层级、排期、全员估时、关联缺陷、可流转事件 | [ones-guide.md](references/ones-guide.md) |
+| **“IoT-2026-10-27 这个迭代有哪些需求 / 某人负责哪些需求”** | `node scripts/ones_query.js reqs --sprint <迭代\|ID>` / `reqs --pm <账号>` | 需求列表（状态/优先级/迭代/PM/标题），支持层级与标题过滤 | [ones-guide.md](references/ones-guide.md) |
+| **“这个需求关联了哪些缺陷 / 查下某人的缺陷”** | `node scripts/ones_query.js req <id>` / `bugs --resolver <人名>` / `bugs --summary <关键词>` | 关联缺陷列表与缺陷检索（状态/优先级/处理人） | [ones-guide.md](references/ones-guide.md) |
+| **“查下有哪些迭代 / 项目 / 业务层级 / 枚举值”** | `node scripts/ones_query.js iterations\|projects\|tree\|enums` | 迭代与项目列表（含 `m_project_id`）、四级层级树、需求/缺陷枚举字典 | [ones-guide.md](references/ones-guide.md) |
+| **“在 ONES 建一个需求（挂在某项目某迭代下）”** | **阶段 1 (Pre-flight)**: `node scripts/ones_modify.js create-req --title "…" --level "方向/业务线/系统/子系统" --project <项目> --pm <人名> --sprint <迭代> --with-safety-func`<br>**阶段 2 (确认后)**: 追加 `--confirm` | 预审单（层级/项目/迭代/PM/必填项）+ 完整 payload；确认后创建并回查详情 | [ones-guide.md](references/ones-guide.md) |
+| **“提一个缺陷，挂在需求 xxx 下”** | **阶段 1**: `node scripts/ones_modify.js create-bug --summary "…" --resolver <人名> --require-id <需求ID> --priority P0`<br>**阶段 2**: 追加 `--confirm` | 缺陷预审单（类型/发现方式/处理人/关联需求），确认后创建 | [ones-guide.md](references/ones-guide.md) |
+| **“提个缺陷，排期 0.2 天”** | **阶段 1**: `node scripts/ones_modify.js create-bug --summary "…" --resolver <人名> --man-hour 0.2 [--start … --end …]`<br>**阶段 2**: 追加 `--confirm` | 缺陷预审单 + 工时预审；确认后创建缺陷并自动写工时（`/api/bug/save_hour`） | [ones-guide.md](references/ones-guide.md) |
+| **“把这个需求排到 12 月上线 / 调整开发测试时间”** | **阶段 1**: `node scripts/ones_modify.js schedule <需求ID> --develop-start … --test-end … --online "…"`<br>**阶段 2**: 追加 `--confirm` | 【改前 vs 改后】排期 Diff，确认后提交并回查 | [ones-guide.md](references/ones-guide.md) |
+| **“把这个需求挪到下个迭代 / 需求评审通过 / 标记完成”** | **阶段 1**: `node scripts/ones_modify.js move <需求ID> --sprint <迭代>` / `advance <需求ID> --event 评审`<br>**阶段 2**: 追加 `--confirm` | 迭代迁移预审单 / 状态流转预审单（删除、取消标红为高危） | [ones-guide.md](references/ones-guide.md) |
 
 ---
 
@@ -150,8 +160,8 @@ flowchart TD
 
 ## 🔌 凭据自动获取与中继概览
 
-- **内生中继机制**：默认复用本地 `~/.shrimp/skills/live-inspector/` 下的缓存凭据；仅在凭据缺失或明确鉴权失败时，通过 `127.0.0.1:19527` 本地桥接从已加载的 Chrome 扩展（**Leo cookie.txt Locally**，版本 ≥ 1.3.15）静默同步；
-- **平台支持范围**：服务云 (`cloud_token.json`)、Shipwright (`shipwright_cookie.json`)、FeCI (`feci_cookie.json`)、Apollo Portal (`test_apollo_cookie.json`)、Luke 权限 (`luke_cookie.json`)、UC 组织 (`test_uc_cookie.json`)、灯塔 ARMS (`arms_api_key.json` / `arms_cookie.json`)、ES 搜索云 (`search_cookie.json`)、白鸽网关 (`baige_cookie.json`)、Dinsight、FAST (`fast_cookie.json`)；
+- **内生中继机制**：默认复用本地 `~/.shrimp/skills/live-inspector/` 下的缓存凭据；仅在凭据缺失或明确鉴权失败时，通过 `127.0.0.1:19526` 本地桥接从已加载的 Chrome 扩展（**Leo cookie.txt Locally**，版本 ≥ 1.3.15）静默同步；
+- **平台支持范围**：服务云 (`cloud_token.json`)、Shipwright (`shipwright_cookie.json`)、FeCI (`feci_cookie.json`)、Apollo Portal (`test_apollo_cookie.json`)、Luke 权限 (`luke_cookie.json`)、UC 组织 (`test_uc_cookie.json`)、灯塔 ARMS (`arms_api_key.json` / `arms_cookie.json`)、ES 搜索云 (`search_cookie.json`)、白鸽网关 (`baige_cookie.json`)、Dinsight、FAST (`fast_cookie.json`)、ONES 研发管理 (`ones_cookie.json`)；
 - **独立中继工具**：可使用 `node scripts/credential_relay.js <targetUrl>` 单点测试与同步凭据（严禁调用任何外部自动化浏览器）。
 
 ---
@@ -195,4 +205,5 @@ flowchart TD
 - **🌐 通用 Chrome 浏览器操作与页面数据抓取手册**：[references/browser-guide.md](references/browser-guide.md)
 - **📋 页面操作流程沉淀与整段复用手册**：[references/page-flow-guide.md](references/page-flow-guide.md)
 - **📝 本地排查流程知识库操作与沉淀手册**：[references/local-knowledge-guide.md](references/local-knowledge-guide.md)
+- **🗂️ ONES 研发管理平台需求/缺陷/排期探查与协作手册**：[references/ones-guide.md](references/ones-guide.md)
 - **🧵 Trace 全链路时序排障实战案例**：[examples/100_trace_and_log_query.md](examples/100_trace_and_log_query.md)

@@ -435,6 +435,27 @@ export function saveSearchCookie(cookieStr) {
   });
 }
 
+/** ONES 研发管理平台 (ones.ke.com) Cookie 凭证 */
+export function loadOnesCookie() {
+  return loadCookie({
+    envVar: 'ONES_COOKIE',
+    jsonFileName: 'ones_cookie.json',
+    targetUrl: 'https://ones.ke.com/',
+    downloadCandidates: [
+      'cookies-ones.ke.com.txt',
+      'cookies-ones.txt',
+      'cookies.txt'
+    ]
+  });
+}
+
+export function saveOnesCookie(cookieStr) {
+  return saveCookie({
+    jsonFileName: 'ones_cookie.json',
+    cookieStr
+  });
+}
+
 /** FAST 日志平台 (fast.ke.com) Cookie 凭证 */
 export function loadFastCookie() {
   return loadCookie({
