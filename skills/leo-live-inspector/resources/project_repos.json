@@ -1,0 +1,10 @@
+{
+  "zulin-iot-platform": {
+    "git": "https://git.lianjia.com/rent_plat/iot-platform.git",
+    "note": "IoT 平台主服务，测试环境走 qa-YYYY-MM 月度分支"
+  },
+  "beijia-iot-warehouse": {
+    "git": "https://git.lianjia.com/rent_plat/beijia-iot-warehouse.git",
+    "note": "贝家 IoT 仓库服务，测试环境走 qa-YYYY-M-D 月度分支"
+  }
+}

@@ -85,7 +85,8 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 | **“查下 recorder 最新的 5 条图片数据 (线上)”** | `node scripts/cloud_mysql_query.js recorder "SELECT id, source, ctime FROM image_understanding_detail ORDER BY id DESC LIMIT 5"` | 线上服务云从库只读查询，输出耗时与数据表格 | [database-guide.md](references/database-guide.md) |
 | **“查下【测试环境】saas 库的订单数据”** | `node scripts/test_mysql_query.js saas "SELECT * FROM algo_detect_report ORDER BY id DESC LIMIT 5"` | 测试环境默认主库直连表格，毫秒级响应 | [database-guide.md](references/database-guide.md) |
 | **“往测试环境 saas 库插一条配置数据 / 更新状态”** | `node scripts/test_mysql_query.js saas "INSERT INTO ..."` / `"UPDATE ... WHERE ..."` | 执行 DML 写入，返回 affectedRows (严格顶层 WHERE 保护) | [database-guide.md](references/database-guide.md) |
-| **“把当前分支构建部署到测试环境”** | **阶段 1 (Pre-flight 预审)**：识别分支与目标泳道，推送部署确认卡片；<br>**阶段 2 (确认后)**：执行 `node scripts/ci_deploy.js` (后端) / `node scripts/feci_deploy.js` (前端) | 自动识别 Git 分支，触发流水线构建并自动部署测试环境 | [ci-deploy-guide.md](references/ci-deploy-guide.md) |
+| **“把当前分支（或合进最新 QA 分支后）构建部署到测试环境”** | **阶段 1 (Pre-flight 预审)**：识别分支与目标泳道（若需合流 QA 则用 `--merge-from <devBranch> --dry-run` 预演隔离合并），推送部署确认卡片；<br>**阶段 2 (确认后)**：执行 `node scripts/ci_deploy.js [--merge-from <devBranch>]` (后端) / `node scripts/feci_deploy.js` (前端) | 自动识别 Git 分支（支持隔离 worktree 合入最新 `qa-YYYY-MM`），触发流水线构建并自动部署测试环境 | [ci-deploy-guide.md](references/ci-deploy-guide.md) |
+| **“打开测试环境控制台（可选独立网页入口）”** | `node scripts/deploy_web.js --open` | 启动独立模块化控制台 (`scripts/web_console/`)：支持部署合流、日志、Apollo、写操作预检确认与 18 项凭据台账 | [deploy-web-guide.md](references/deploy-web-guide.md) |
 | **“把 smart-customer-service 部署到线上/生产环境”** | **执行发布参谋模式 (坚决拦截生产直写)** | **严禁自动化生产部署！** 交付《部署参谋单》与服务云直达链接 | [ci-deploy-guide.md](references/ci-deploy-guide.md) |
 | **“用 Dinsight 查近 7 天北京成交量”** | `node scripts/dinsight_query.js "近7天北京成交量"` | 自然语言查数结论，含工具调用与 SSE 摘要 | [dinsight-query-guide.md](references/dinsight-query-guide.md) |
 | **“在这个页面上抓数据 / 测一下 / 导出长图”** | `node scripts/cli/index.mjs state` / `eval` / `screenshot` / `net-start` | 驱动真实 Chrome 执行结构化数据抓取与 API 嗅探 (线上一律只读) | [browser-guide.md](references/browser-guide.md) |
@@ -201,6 +202,7 @@ flowchart TD
 - **📡 Kafka 消息无损探查与安全模拟投递手册**：[references/kafka-guide.md](references/kafka-guide.md)
 - **🗄️ 数据库查询参考手册 (服务云 MySQL / 线下直连)**：[references/database-guide.md](references/database-guide.md)
 - **🚀 CI 构建与测试环境工作负载自动化部署手册**：[references/ci-deploy-guide.md](references/ci-deploy-guide.md)
+- **🖥️ 测试环境可视化控制台手册（独立可剥离 UI 模块）**：[references/deploy-web-guide.md](references/deploy-web-guide.md)
 - **🧠 Dinsight 自然语言大数据探查协议手册**：[references/dinsight-query-guide.md](references/dinsight-query-guide.md)
 - **🌐 通用 Chrome 浏览器操作与页面数据抓取手册**：[references/browser-guide.md](references/browser-guide.md)
 - **📋 页面操作流程沉淀与整段复用手册**：[references/page-flow-guide.md](references/page-flow-guide.md)

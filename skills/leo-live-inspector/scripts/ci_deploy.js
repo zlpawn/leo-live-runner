@@ -19,6 +19,13 @@ import { execSync } from 'node:child_process';
 import { URL } from 'node:url';
 import { loadCloudCookie, saveCloudCookie, loadShipwrightCookie, saveShipwrightCookie } from './common/credentials.js';
 import { resolveAppId, getServiceCiDeployMeta, saveServiceCiDeployMeta } from './common/services.js';
+import {
+  detectProjectRepo,
+  listRemoteBranches,
+  pickDefaultQaBranch,
+  mergeBranchIntoQa,
+  saveLearnedProjectRepo
+} from './common/qa_merge.js';
 
 
 const credentialSessions = new Map();
@@ -188,8 +195,13 @@ async function autoDiscoverServiceMeta(serviceId, cookie) {
     workflowId = testWf.id;
     workflowName = testWf.name;
     const gitStep = testWf.steps?.find(s => s.id === 'git' || s.template?.type === 'Git');
-    if (gitStep?.template?.branch) {
-      defaultBranch = gitStep.template.branch;
+    const tpl = gitStep?.template || {};
+    if (tpl.branch) {
+      defaultBranch = tpl.branch;
+    }
+    const gitUrl = tpl.url || tpl.repository || tpl.gitUrl || tpl.repoUrl || tpl.repo || '';
+    if (gitUrl) {
+      saveLearnedProjectRepo(serviceId, gitUrl, `自动从 Shipwright 构建器 [${workflowName}] 反查`);
     }
   }
 
@@ -446,7 +458,10 @@ async function main() {
     console.log(`用法: node scripts/ci_deploy.js [service] [options]`);
     console.log(`\n选项:`);
     console.log(`  -s, --service <name>   目标微服务 ID 或别名 (默认根据当前 Git 仓库自动识别)`);
-    console.log(`  -b, --branch <branch>  构建的代码分支 (默认根据当前 Git 分支自动识别)`);
+    console.log(`  -b, --branch <branch>  构建的代码分支 / 目标 QA 分支 (默认根据当前 Git 分支或最新月度 QA 分支自动识别)`);
+    console.log(`  --merge-from <branch>  构建前在隔离 worktree 中将指定开发分支合并进目标 QA 分支并推送 (冲突严格回滚)`);
+    console.log(`  --merge-qa             将当前开发分支自动合并进最新月度 QA 分支 (qa-YYYY-MM) 后构建部署`);
+    console.log(`  --merge-only           仅执行隔离合并与推送 QA 分支，不触发 CI 构建部署`);
     console.log(`  --build-only           仅触发 Shipwright CI 构建，不执行部署`);
     console.log(`  --deploy-only          仅执行测试工作负载部署 (默认使用最新产物镜像)`);
     console.log(`  -i, --image <image>    显式指定部署的目标镜像地址`);
@@ -481,12 +496,27 @@ async function main() {
   }
 
   // 2. 解析参数
-  let rawService = args.find(a => !a.startsWith('-'));
+  const VALUE_FLAGS = new Set(['-s', '--service', '-b', '--branch', '-e', '--env', '-i', '--image', '--timeout', '--merge-from']);
+  let rawService = null;
+  const svcIdx = args.findIndex(a => a === '-s' || a === '--service');
+  if (svcIdx !== -1 && args[svcIdx + 1]) rawService = args[svcIdx + 1];
+  if (!rawService) {
+    for (let i = 0; i < args.length; i++) {
+      if (VALUE_FLAGS.has(args[i])) { i++; continue; }
+      if (!args[i].startsWith('-')) { rawService = args[i]; break; }
+    }
+  }
   const isBuildOnly = args.includes('--build-only');
   const isDeployOnly = args.includes('--deploy-only');
+  const isMergeOnly = args.includes('--merge-only');
+  const isMergeQa = args.includes('--merge-qa');
   const isListImages = args.includes('--list-images');
   const isDryRun = args.includes('--dry-run');
   const isJson = args.includes('--json');
+
+  let mergeFromBranch = null;
+  const mergeFromIdx = args.indexOf('--merge-from');
+  if (mergeFromIdx !== -1 && args[mergeFromIdx + 1]) mergeFromBranch = args[mergeFromIdx + 1];
 
   let targetEnv = 'test';
   const envIdx = args.findIndex(a => a === '-e' || a === '--env');
@@ -515,11 +545,15 @@ async function main() {
     rawService = detectedService;
     console.log(`📍 自动从本地 Git 仓库识别服务: [${rawService}]`);
   }
-  if (!branch && detectedBranch) {
+  const explicitTargetBranch = branch;
+  if (isMergeQa && !mergeFromBranch) {
+    mergeFromBranch = detectedBranch || '';
+  }
+  if (!branch && !mergeFromBranch && detectedBranch) {
     branch = detectedBranch;
     console.log(`🌿 自动从本地 Git 分支识别: [${branch}]`);
   }
-  if (!branch) branch = 'master';
+  if (!branch && !mergeFromBranch) branch = 'master';
 
   if (!rawService) {
     console.log(`❌ 请提供目标服务名或在 Git 项目根目录下运行:`);
@@ -563,17 +597,58 @@ async function main() {
   // build-only 模式下可能没有工作负载信息，展示用占位符（不会走到部署分支）
   const workloadId = meta.deploy?.test?.workloadId || '(仅构建，未解析工作负载)';
 
+  // 6.5 若启用了 --merge-from / --merge-qa，定位仓库与目标 QA 分支
+  let mergeRepoPath = null;
+  if (mergeFromBranch) {
+    const repoInfo = await detectProjectRepo(serviceId);
+    mergeRepoPath = repoInfo.repoPath;
+    if (!mergeRepoPath) {
+      console.log(`❌ 未能自动定位服务 [${serviceId}] 的 Git 仓库${repoInfo.cloneError ? `: ${repoInfo.cloneError}` : ''}。`);
+      process.exit(1);
+    }
+    if (!explicitTargetBranch) {
+      const branches = await listRemoteBranches(mergeRepoPath);
+      branch = pickDefaultQaBranch(branches, '', meta.ci.defaultBranch || 'master');
+      console.log(`🎯 自动匹配最新目标 QA 分支: [${branch}]`);
+    }
+  }
+
   // 7. Dry-Run 预检模式
   if (isDryRun) {
     console.log(`\n📋 【Pre-flight 预检确认】:`);
     console.log(`   - 目标服务: ${serviceId}`);
     console.log(`   - 构建器 ID: ${workflowId} (${meta.ci.workflowName || '-'})`);
-    console.log(`   - Git 分支: ${branch}`);
-    console.log(`   - 目标工作负载: ${workloadId} (${meta.deploy.test.workloadName || '-'})`);
+    if (mergeFromBranch) {
+      console.log(`   - 隔离合流: [${mergeFromBranch}] ➜ [${branch}] (仓库: ${mergeRepoPath})`);
+    }
+    console.log(`   - 构建分支: ${branch}`);
+    console.log(`   - 目标工作负载: ${workloadId} (${meta.deploy?.test?.workloadName || '-'})`);
     console.log(`   - 部署环境: 测试环境 (${targetEnv})`);
-    console.log(`   - 模式: ${isBuildOnly ? '仅构建' : isDeployOnly ? '仅部署' : '完整构建+部署流水线'}`);
+    console.log(`   - 模式: ${isMergeOnly ? '仅合并推送 QA 分支' : isBuildOnly ? '仅构建' : isDeployOnly ? '仅部署' : (mergeFromBranch ? '隔离合并 QA + 构建 + 部署' : '完整构建+部署流水线')}`);
+    if (mergeFromBranch && mergeRepoPath) {
+      await mergeBranchIntoQa({
+        repoPath: mergeRepoPath,
+        devBranch: mergeFromBranch,
+        qaBranch: branch,
+        preview: true
+      });
+    }
     console.log(`   ✅ 预检通过，参数均已就绪。\n`);
     process.exit(0);
+  }
+
+  // 7.5 正式执行隔离合并 QA 分支
+  if (mergeFromBranch && mergeRepoPath) {
+    await mergeBranchIntoQa({
+      repoPath: mergeRepoPath,
+      devBranch: mergeFromBranch,
+      qaBranch: branch,
+      preview: false
+    });
+    if (isMergeOnly) {
+      console.log(`\n✅ 已完成 [${mergeFromBranch}] ➜ [${branch}] 合并与推送 (--merge-only)。\n`);
+      process.exit(0);
+    }
   }
 
   console.log(`\n======================================================`);

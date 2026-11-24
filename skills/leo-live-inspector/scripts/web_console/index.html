@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Leo Live Inspector 控制台</title>
+<style>
+  :root { --bg:#0e1116; --panel:#171b22; --panel2:#1e242d; --border:#2b333f; --fg:#e6edf3; --muted:#8b97a7; --accent:#3b82f6; --accent2:#2563eb; --ok:#22c55e; --err:#ef4444; --warn:#f59e0b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 70px; }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  header h1 { font-size:19px; margin:0; font-weight:650; letter-spacing:.3px; }
+  .badge { font-size:11px; color:var(--warn); border:1px solid rgba(245,158,11,.4); background:rgba(245,158,11,.1); border-radius:20px; padding:2px 10px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok); display:inline-block; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; position:sticky; top:0; z-index:20; background:var(--bg); }
+  .tabs button { padding:10px 18px; font-size:14px; color:var(--muted); background:transparent; border:none; border-radius:0; border-bottom:2px solid transparent; white-space:nowrap; }
+  .tabs button:hover { color:var(--fg); border-color:transparent; border-bottom-color:var(--border); }
+  .tabs button.active { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
+  .page { display:none; }
+  .page.active { display:block; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px 18px 20px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 14px; font-weight:650; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+  .split { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:16px; align-items:start; }
+  .field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .field label { font-size:12px; color:var(--muted); letter-spacing:.4px; }
+  input, select, textarea { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--fg); font-size:14px; outline:none; font-family:inherit; }
+  input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+  input[readonly] { color:var(--muted); }
+  textarea { resize:vertical; min-height:70px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; }
+  .row { display:flex; gap:8px; align-items:flex-end; }
+  .row > input { flex:1; }
+  .combo { position:relative; }
+  .combo-list { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); max-height:280px; overflow:auto; background:var(--panel2); border:1px solid var(--border); border-radius:8px; box-shadow:0 14px 34px rgba(0,0,0,.5); }
+  .combo-item { padding:8px 12px; font-size:13.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .combo-item:hover, .combo-item.active { background:var(--accent); color:#fff; }
+  .combo-empty { padding:10px 12px; color:var(--muted); font-size:13px; }
+  button { padding:9px 15px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--fg); font-size:14px; cursor:pointer; white-space:nowrap; font-family:inherit; }
+  button:hover { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:linear-gradient(180deg,var(--accent),var(--accent2)); border:none; font-weight:600; padding:11px 24px; font-size:15px; }
+  button.danger { background:linear-gradient(180deg,#dc2626,#b91c1c); border:none; font-weight:600; }
+  button.ghost { background:transparent; }
+  button.sm { padding:5px 10px; font-size:12.5px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:8px; line-height:1.6; }
+  .actions { display:flex; align-items:center; gap:14px; margin-top:14px; flex-wrap:wrap; }
+  .status { font-size:13px; }
+  .status.running { color:var(--warn); }
+  .status.success { color:var(--ok); }
+  .status.error { color:var(--err); }
+  pre.out { margin:0; padding:14px; height:340px; overflow:auto; background:#0a0d12; border:1px solid var(--border); border-radius:10px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; color:#c9d4e0; }
+  pre#log { height:400px; }
+  .muted { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:8px 10px; color:var(--muted); font-weight:500; border-bottom:1px solid var(--border); white-space:nowrap; font-size:12px; }
+  td { padding:8px 10px; border-bottom:1px solid rgba(43,51,63,.55); vertical-align:top; word-break:break-word; }
+  tr:hover td { background:rgba(255,255,255,.02); }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12px; }
+  table.cred { table-layout:fixed; }
+  table.cred td, table.cred th { word-break:break-word; }
+  .cred-ops { display:flex; gap:6px; flex-wrap:wrap; }
+  .cred-line { margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:help; }
+  .cred-line b { color:var(--fg); font-weight:600; }
+  .tag { display:inline-block; font-size:11px; padding:1px 8px; border-radius:20px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
+  .tag.ok { color:var(--ok); border-color:rgba(34,197,94,.4); }
+  .tag.err { color:var(--err); border-color:rgba(239,68,68,.4); }
+  .tag.warn { color:var(--warn); border-color:rgba(245,158,11,.4); }
+  .joblist { display:flex; flex-direction:column; gap:8px; max-height:520px; overflow:auto; }
+  .jobitem { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; background:var(--panel2); }
+  .jobitem:hover { border-color:var(--accent); }
+  .jobitem.sel { border-color:var(--accent); background:rgba(59,130,246,.1); }
+  .jobitem .t1 { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jobitem .t2 { font-size:11px; color:var(--muted); margin-top:4px; }
+  .homecard { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:8px; }
+  .homecard h3 { font-size:14px; margin:0; font-weight:650; }
+  .homecard p { margin:0; font-size:12.5px; color:var(--muted); line-height:1.65; }
+  .homecard .kw { font-size:11px; color:var(--muted); }
+  .homecard button { align-self:flex-start; margin-top:4px; }
+  .subtabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  .subtabs button.on { border-color:var(--accent); color:#fff; background:rgba(59,130,246,.18); }
+  .warnbox { border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.08); border-radius:9px; padding:11px 13px; font-size:12.5px; color:#fca5a5; line-height:1.6; margin-bottom:16px; }
+  .okbox { border:1px solid rgba(34,197,94,.35); background:rgba(34,197,94,.07); border-radius:9px; padding:11px 13px; font-size:12.5px; color:#86efac; line-height:1.6; }
+  .toast { position:fixed; right:20px; bottom:20px; background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 16px; font-size:13px; box-shadow:0 14px 40px rgba(0,0,0,.5); opacity:0; transform:translateY(8px); transition:.2s; pointer-events:none; max-width:420px; z-index:100; }
+  .toast.show { opacity:1; transform:none; }
+  .toast.err { border-color:rgba(239,68,68,.5); color:#fca5a5; }
+  .toast.ok { border-color:rgba(34,197,94,.5); color:#86efac; }
+  @media (max-width:860px) { .grid, .split { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="dot" id="liveDot"></span>
+    <h1>Leo Live Inspector · 测试环境控制台</h1>
+    <span class="badge">仅测试环境 · 生产只读</span>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button role="tab" class="active" data-tab="home" aria-selected="true">首页</button>
+    <button role="tab" data-tab="deploy" aria-selected="false">部署</button>
+    <button role="tab" data-tab="logs" aria-selected="false">日志检索</button>
+    <button role="tab" data-tab="apollo" aria-selected="false">Apollo 配置</button>
+    <button role="tab" data-tab="write" aria-selected="false">写操作</button>
+    <button role="tab" data-tab="credentials" aria-selected="false">凭据</button>
+  </nav>
+
+  <!-- ============================ 首页 ============================ -->
+  <section class="page active" id="page-home">
+    <div class="card">
+      <h2>这个控制台能做什么</h2>
+      <p class="hint" style="margin-top:0">
+        本页面是 leo-live-inspector 的独立可视化辅助入口（与 AI 对话共享同一套 CLI 引擎）。
+        部署与写操作只作用于<b>测试环境</b>；线上环境一律只读，写入需要走官方审批流，页面不会提供入口。
+      </p>
+    </div>
+    <div class="grid">
+      <div class="homecard">
+        <h3>🚀 合并 QA 分支并部署</h3>
+        <p>选项目 → 选开发分支 → 合并进 QA 分支 → 推送 → 触发 Shipwright 构建 → 下发测试环境工作负载。合并全程在隔离 worktree 执行，不动你正在编辑的目录。</p>
+        <div class="kw">对应脚本：ci_deploy.js --merge-from</div>
+        <button class="ghost" data-goto="deploy">进入部署 →</button>
+      </div>
+      <div class="homecard">
+        <h3>🩺 部署后自动验活</h3>
+        <p>部署成功后自动拉取该服务近 10 分钟的测试环境容器日志，抓 <code>ERROR</code> 级别条目，一眼看出「部署完了服务到底活没活」。</p>
+        <div class="kw">对应脚本：test_log_query.js</div>
+        <button class="ghost" data-goto="logs">去日志检索 →</button>
+      </div>
+      <div class="homecard">
+        <h3>🔍 日志检索（测试 / 生产）</h3>
+        <p>按服务 + 关键词 + 时间窗 + 日志级别查日志。测试环境走大禹泳道容器日志，生产环境走 FAST/Kibana（严格只读）。</p>
+        <div class="kw">对应脚本：test_log_query.js / fast_query.js</div>
+        <button class="ghost" data-goto="logs">进入日志检索 →</button>
+      </div>
+      <div class="homecard">
+        <h3>⚙️ Apollo 配置速查与发布轨迹</h3>
+        <p>查某服务在某环境的全量配置或按 key 关键字模糊搜；再按配置项追溯历次发布是谁、什么时候、把值从什么改成了什么。</p>
+        <div class="kw">对应脚本：apollo_query.js / apollo_history.js</div>
+        <button class="ghost" data-goto="apollo">进入 Apollo →</button>
+      </div>
+      <div class="homecard">
+        <h3>🛠️ 测试环境写操作</h3>
+        <p>Apollo 配置改值与发布、ES 文档改/删、Kafka 模拟投递、测试库 DML。全部强制「预检 → 确认」两步，未确认不写入。</p>
+        <div class="kw">对应脚本：apollo_modify.js / es_modify.js / kafka_send.js / test_mysql_query.js</div>
+        <button class="ghost" data-goto="write">进入写操作 →</button>
+      </div>
+      <div class="homecard">
+        <h3>🔑 凭据台账（18 项 · 切回自动同步）</h3>
+        <p>一页看全 skill 依赖的全部 Cookie / Token（含 ONES）。点「刷新」先静默探活；需登录时在浏览器打开新标签页，登录完切回本页即自动单次同步落盘（零高频轮询）。</p>
+        <div class="kw">对应脚本：credential_relay.js（本地桥接 127.0.0.1:19526）</div>
+        <button class="ghost" data-goto="credentials">管理凭据 →</button>
+      </div>
+      <div class="homecard">
+        <h3>📜 历史任务回看</h3>
+        <p>每次部署的完整日志都落盘在 <code>~/.shrimp/skills/live-inspector/deploy_jobs/</code>，服务重启后仍能点开看失败原因。</p>
+        <div class="kw">入口：部署页右侧「最近任务」</div>
+        <button class="ghost" data-goto="deploy">查看任务 →</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>安全边界</h2>
+      <p class="hint" style="margin-top:0">
+        · <b>生产环境物理只读</b>：任何写操作在后端就被拦截，页面不提供生产写入入口；<br />
+        · <b>测试环境两步确认</b>：所有写操作必须先「预检」看到 Diff，再点「确认提交」才真正写入；<br />
+        · <b>部署合并隔离</b>：合并冲突时严格失败并列出冲突文件，绝不自动改代码；QA 分支受保护时改走临时分支 + MR。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ 部署 ============================ -->
+  <section class="page" id="page-deploy">
+    <div class="split">
+      <div>
+        <div class="card">
+          <div class="grid">
+            <div class="field">
+              <label>项目（全量服务清单 · 支持已登记 Git / 本地仓库 / Shipwright 自动反查）</label>
+              <div class="combo">
+                <input id="project" autocomplete="off" spellcheck="false" placeholder="点击展开项目清单，或直接输入服务名" />
+                <div class="combo-list" id="projectList" hidden></div>
+              </div>
+              <div class="hint">未手工登记 Git 地址的服务会自动扫描本机仓库或从 Shipwright 构建器反查并缓存</div>
+            </div>
+            <div class="field">
+              <label>执行模式</label>
+              <select id="mode">
+                <option value="merge_deploy">合并 + 构建部署（QA 受保护时会在推送处提示改走 MR）</option>
+                <option value="deploy_dev">直接部署开发分支（不合并、不推 QA，最快）</option>
+                <option value="merge_only">仅合并到 QA 分支</option>
+                <option value="build_deploy">仅构建部署（不合并）</option>
+                <option value="build_only">仅构建（不部署）</option>
+                <option value="preview">仅预演合并（不推送不部署）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>冲突处理策略</label>
+              <div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+                严格失败：出现冲突立即中止并列出冲突文件，不自动改代码、不推送、不部署。
+              </div>
+            </div>
+            <div class="field">
+              <label>开发分支（可输入搜索 · 自动记忆）</label>
+              <div class="combo">
+                <input id="devBranch" autocomplete="off" spellcheck="false" placeholder="点击选择，或输入关键字搜索" />
+                <div class="combo-list" id="devList" hidden></div>
+              </div>
+            </div>
+            <div class="field">
+              <label>QA 分支（可输入搜索 · 自动记忆）</label>
+              <div class="combo">
+                <input id="qaBranch" autocomplete="off" spellcheck="false" placeholder="点击选择，或输入关键字搜索" />
+                <div class="combo-list" id="qaList" hidden></div>
+              </div>
+              <div class="hint" id="qaHint"></div>
+            </div>
+            <div class="field" style="grid-column:1/-1">
+              <label>仓库来源（已登记或自动发现 Git 地址则无需填写）</label>
+              <div class="row">
+                <input id="repoPath" placeholder="可选：手动指定本地仓库路径，如 /Users/you/IdeaProjects/iot-platform" />
+                <button class="ghost" id="btnRepo">设置仓库</button>
+                <button class="ghost" id="btnBranches">刷新分支</button>
+              </div>
+              <div class="hint" id="repoHint"></div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" id="btnDeploy">合并并部署</button>
+            <button class="ghost" id="btnCred">检查凭据</button>
+            <label class="hint" style="display:flex;align-items:center;gap:6px;margin:0">
+              <input type="checkbox" id="autoVerify" checked style="width:auto" /> 部署成功后自动验活
+            </label>
+            <span class="status" id="status">就绪</span>
+          </div>
+          <div class="hint" id="credHint"></div>
+          <div class="hint">⚠️ 合并会创建隔离的临时工作区执行，不会影响你当前正在编辑的工作目录。生产环境不会被自动部署。</div>
+        </div>
+
+        <div class="card">
+          <div class="field" style="margin-bottom:10px;flex-direction:row;align-items:center;justify-content:space-between">
+            <label>执行日志</label>
+            <span class="hint" id="logFollow" style="margin:0;display:none">已暂停自动跟随 · <a href="#" id="btnFollow" style="color:var(--accent)">回到最新</a></span>
+          </div>
+          <pre class="out" id="log">等待操作…</pre>
+        </div>
+
+        <div class="card" id="verifyCard" style="display:none">
+          <h2>部署后验活（近 10 分钟测试环境 ERROR 日志）</h2>
+          <div id="verifyBody"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>最近任务</h2>
+        <div class="hint" style="margin:0 0 10px">点击任意一条回看完整日志</div>
+        <div class="joblist" id="jobList"><div class="combo-empty">加载中…</div></div>
+        <button class="ghost sm" id="btnJobs" style="margin-top:10px;width:100%">刷新列表</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 日志检索 ============================ -->
+  <section class="page" id="page-logs">
+    <div class="card">
+      <div class="grid">
+        <div class="field">
+          <label>日志来源</label>
+          <select id="logSource">
+            <option value="test">测试环境容器日志（大禹泳道 · Loki）</option>
+            <option value="prod">生产环境 FAST / Kibana（只读）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>服务</label>
+          <div class="combo">
+            <input id="logApp" autocomplete="off" spellcheck="false" placeholder="输入服务名或别名，如 iot-platform / warehouse" />
+            <div class="combo-list" id="logAppList" hidden></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>关键词（可选）</label>
+          <input id="logQuery" placeholder="如 Exception / orderCode / 接口路径" />
+        </div>
+        <div class="field">
+          <label>日志级别</label>
+          <select id="logLevel">
+            <option value="">全部</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="INFO">INFO</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>时间窗</label>
+          <select id="logTime">
+            <option value="15m">最近 15 分钟</option>
+            <option value="1h" selected>最近 1 小时</option>
+            <option value="6h">最近 6 小时</option>
+            <option value="24h">最近 24 小时</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>条数</label>
+          <input id="logSize" value="20" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnLogQuery">查询日志</button>
+        <button class="ghost" id="btnLogError">只看 ERROR</button>
+        <span class="status" id="logStatus">就绪</span>
+      </div>
+      <div class="hint" id="logHint"></div>
+    </div>
+    <div class="card">
+      <h2>结果</h2>
+      <div id="logResult"><div class="combo-empty">尚未查询</div></div>
+    </div>
+  </section>
+
+  <!-- ============================ Apollo ============================ -->
+  <section class="page" id="page-apollo">
+    <div class="card">
+      <div class="grid">
+        <div class="field">
+          <label>服务</label>
+          <div class="combo">
+            <input id="apApp" autocomplete="off" spellcheck="false" placeholder="如 iot / saas / warehouse" />
+            <div class="combo-list" id="apAppList" hidden></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>环境</label>
+          <select id="apEnv">
+            <option value="test" selected>测试环境 (TEST)</option>
+            <option value="preview">预发环境 (PREVIEW · 只读)</option>
+            <option value="prod">生产环境 (PROD · 只读)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>命名空间 或 key 关键字</label>
+          <input id="apKeyword" placeholder="如 application / timeout（留空=全量概览）" />
+        </div>
+        <div class="field">
+          <label>发布轨迹：配置项 key</label>
+          <input id="apHistoryKey" placeholder="填写后点「查发布轨迹」，如 personless.closeDoorTimeoutSecond" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnApQuery">查配置</button>
+        <button class="ghost" id="btnApHistory">查发布轨迹</button>
+        <span class="status" id="apStatus">就绪</span>
+      </div>
+      <div class="hint" id="apHint"></div>
+    </div>
+    <div class="card">
+      <h2 id="apResultTitle">结果</h2>
+      <div id="apResult"><div class="combo-empty">尚未查询</div></div>
+    </div>
+  </section>
+
+  <!-- ============================ 写操作 ============================ -->
+  <section class="page" id="page-write">
+    <div class="warnbox">
+      🚨 <b>仅测试环境</b>。所有写操作必须先「预检」看到变更 Diff，再点「确认提交」才会真正写入。
+      生产环境写入在后端被物理拦截，本页面不提供入口。
+    </div>
+    <div class="subtabs" id="writeTabs">
+      <button class="on" data-w="apollo">Apollo 配置</button>
+      <button data-w="es">ES 文档</button>
+      <button data-w="kafka">Kafka 投递</button>
+      <button data-w="mysql">测试库 SQL</button>
+    </div>
+
+    <div class="card wsec" id="w-apollo">
+      <div class="grid">
+        <div class="field">
+          <label>服务</label>
+          <div class="combo">
+            <input id="wApApp" autocomplete="off" spellcheck="false" placeholder="如 iot / saas / warehouse" />
+            <div class="combo-list" id="wApAppList" hidden></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>配置项 Key</label>
+          <input id="wApKey" placeholder="如 liveRunner.access.ucIdWhitelist" />
+        </div>
+        <div class="field">
+          <label>命名空间（可留空，自动嗅探）</label>
+          <input id="wApNs" placeholder="如 application" />
+        </div>
+        <div class="field">
+          <label>发布属性</label>
+          <select id="wApType">
+            <option value="switch">业务开关 (SWITCH)</option>
+            <option value="change">业务变更 (CHANGE)</option>
+            <option value="degrade">业务降级 (DEGRADE)</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>新的值（支持 JSON）</label>
+          <textarea id="wApValue" placeholder='如 [31534062,12] 或 {"enabled":true}'></textarea>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>发布备注</label>
+          <input id="wApComment" placeholder="可选，会写入 Apollo 发布记录" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="wApPre">预检（不写入）</button>
+        <button class="danger" id="wApCommit" disabled>确认提交</button>
+        <span class="status" id="wApStatus">就绪</span>
+      </div>
+    </div>
+
+    <div class="card wsec" id="w-es" style="display:none">
+      <div class="grid">
+        <div class="field">
+          <label>索引（Service ID 或名称关键词）</label>
+          <input id="wEsApp" placeholder="如 门锁 / 1036710001" />
+        </div>
+        <div class="field">
+          <label>动作</label>
+          <select id="wEsAction">
+            <option value="update-part">更新部分字段 (update-part)</option>
+            <option value="update">整条覆盖更新 (update)</option>
+            <option value="insert">新增 (insert)</option>
+            <option value="delete">删除 (delete)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>文档 ID</label>
+          <input id="wEsId" placeholder="如 10001" />
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>写入数据（JSON，删除时可留空）</label>
+          <textarea id="wEsData" placeholder='{"battery": 95}'></textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="wEsPre">预检（Dry-Run Diff）</button>
+        <button class="danger" id="wEsCommit" disabled>确认提交</button>
+        <span class="status" id="wEsStatus">就绪</span>
+      </div>
+    </div>
+
+    <div class="card wsec" id="w-kafka" style="display:none">
+      <div class="grid">
+        <div class="field">
+          <label>Topic（名称 / 中文别名 / 关键词）</label>
+          <input id="wKfTopic" placeholder="如 工单 / beijia-reach-event" />
+        </div>
+        <div class="field">
+          <label>消息 Key（可选）</label>
+          <input id="wKfKey" placeholder="用于固定分区路由" />
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>消息体（JSON）</label>
+          <textarea id="wKfData" placeholder='{"orderCode":"TEST-001","status":"已接单"}'></textarea>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>基于 Sample 模板覆盖字段（可选，每行 k=v；填了则使用 --use-sample）</label>
+          <textarea id="wKfSets" placeholder="status=已完成"></textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="wKfPre">预检（不投递）</button>
+        <button class="danger" id="wKfCommit" disabled>确认投递</button>
+        <span class="status" id="wKfStatus">就绪</span>
+      </div>
+      <div class="hint">Kafka 无原生 Dry-Run：预检只做参数校验与消息体回显，点「确认投递」才真正发送到测试集群。</div>
+    </div>
+
+    <div class="card wsec" id="w-mysql" style="display:none">
+      <div class="grid">
+        <div class="field">
+          <label>服务（测试库）</label>
+          <div class="combo">
+            <input id="wDbApp" autocomplete="off" spellcheck="false" placeholder="如 saas / recorder / iot" />
+            <div class="combo-list" id="wDbAppList" hidden></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>数据源（可留空，使用默认主库）</label>
+          <input id="wDbDs" placeholder="如 tenant0" />
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>SQL</label>
+          <textarea id="wDbSql" placeholder="SELECT * FROM algo_detect_report ORDER BY id DESC LIMIT 5" style="min-height:100px"></textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="wDbPre">预检 / 查询</button>
+        <button class="danger" id="wDbCommit" disabled>确认执行</button>
+        <span class="status" id="wDbStatus">就绪</span>
+      </div>
+      <div class="hint">SELECT/SHOW/DESC/EXPLAIN 点「预检 / 查询」即直接返回结果；INSERT/UPDATE/DELETE 需要再点「确认执行」。无 WHERE 的 UPDATE/DELETE 由脚本层拦截。</div>
+    </div>
+
+    <div class="card">
+      <h2 id="wOutTitle">执行输出</h2>
+      <pre class="out" id="wOut">等待操作…</pre>
+    </div>
+  </section>
+
+  <!-- ============================ 凭据 ============================ -->
+  <section class="page" id="page-credentials">
+    <div class="card">
+      <h2>凭据台账</h2>
+      <p class="hint" style="margin-top:0">
+        这里只展示「有没有、什么时候更新的、包含哪些 Cookie 名」，<b>不会把 Cookie / Token 的值显示在页面上</b>。
+        本机凭据目录：<code id="credDir">~/.shrimp/skills/live-inspector/</code>
+      </p>
+      <div class="actions" style="margin-top:0">
+        <button id="credReload">重新扫描</button>
+        <button id="credRefreshAll" class="ghost">同步全部已登录站点</button>
+        <span class="status" id="credStatus"></span>
+      </div>
+      <div class="hint">
+        同步机制（零高频轮询）：点「刷新」→ 先静默读 1 次浏览器现有 Cookie 并探活，通过即直接落盘；
+        若未登录，自动在新标签页打开该站点登录页，<b>当你在新标签页完成登录并切回本页面时，自动触发单次同步落盘</b>。
+      </div>
+    </div>
+    <div class="card">
+      <h2>凭据明细</h2>
+      <div id="credBody" class="muted">加载中…</div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CSRF_TOKEN = __LEO_CSRF_TOKEN__;
+const PROJECT_ITEMS = __LEO_PROJECT_ITEMS__;
+const APP_ITEMS = __LEO_APP_ITEMS__;
+let currentProject = '';
+let pollTimer = null;
+let lastJobId = null;
+
+const $ = id => document.getElementById(id);
+const modeLabel = { merge_deploy:'合并并部署', merge_only:'仅合并', deploy_dev:'直接部署开发分支', build_deploy:'仅构建部署', build_only:'仅构建', preview:'仅预演合并' };
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, type) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.className = 'toast' + (type ? ' ' + type : ''); }, 3200);
+}
+
+async function api(url, opts = {}) {
+  const headers = { 'X-Leo-Token': CSRF_TOKEN, ...(opts.headers || {}) };
+  const res = await fetch(url, { ...opts, headers });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+function post(url, body) {
+  return api(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+// ---------------------------------------------------------------- tabs ----
+const TABS = ['home', 'deploy', 'logs', 'apollo', 'write', 'credentials'];
+
+function showTab(name) {
+  if (!TABS.includes(name)) name = 'home';
+  document.querySelectorAll('#tabs button').forEach(a => {
+    const on = a.dataset.tab === name;
+    a.classList.toggle('active', on);
+    a.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
+  try { localStorage.setItem('leo.tab', name); } catch (e) {}
+  try {
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', name === 'home' ? location.pathname + location.search : '#' + name);
+    }
+  } catch (e) {}
+  if (name === 'deploy') {
+    setTimeout(() => {
+      if (!logStick) return;
+      const el = $('log');
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 30);
+  }
+  if (name === 'credentials') loadCredentials();
+}
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) showTab(b.dataset.tab);
+});
+document.querySelectorAll('button[data-goto]').forEach(b => {
+  b.addEventListener('click', () => showTab(b.dataset.goto));
+});
+
+// -------------------------------------------------------------- combos ----
+let branchOptions = [];
+
+function makeCombo(inputId, listId, itemsFn, onPick) {
+  const input = $(inputId);
+  const list = $(listId);
+  if (!input || !list) return null;
+  let items = [];
+  let active = -1;
+
+  function highlight() {
+    list.querySelectorAll('.combo-item').forEach((el, i) => el.classList.toggle('active', i === active));
+    const el = list.querySelector('.combo-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+
+  function render(filter) {
+    const all = itemsFn() || [];
+    const f = (filter || '').toLowerCase().trim();
+    items = all.filter(b => !f || String(b).toLowerCase().includes(f)).slice(0, 400);
+    if (!items.length) {
+      list.innerHTML = '<div class="combo-empty">' + (all.length ? '无匹配项' : '暂无可选项') + '</div>';
+      list.hidden = false;
+      return;
+    }
+    list.innerHTML = items.map((b, i) => '<div class="combo-item" data-i="' + i + '">' + escHtml(b) + '</div>').join('');
+    list.hidden = false;
+    active = -1;
+  }
+
+  function hide() { list.hidden = true; active = -1; }
+
+  input.addEventListener('focus', () => render(''));
+  input.addEventListener('click', () => render(''));
+  input.addEventListener('mousedown', e => {
+    if (!input.value) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  });
+  input.addEventListener('input', () => render(input.value));
+  input.addEventListener('keydown', e => {
+    if (list.hidden) { if (e.key === 'ArrowDown') render(''); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, items.length - 1); highlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); highlight(); }
+    else if (e.key === 'Enter') {
+      if (active >= 0 && items[active]) { e.preventDefault(); input.value = items[active]; hide(); if (onPick) onPick(); }
+      else hide();
+    } else if (e.key === 'Escape') { hide(); }
+  });
+  input.addEventListener('blur', () => setTimeout(hide, 120));
+  list.addEventListener('mousedown', e => {
+    const it = e.target.closest('.combo-item');
+    if (!it) return;
+    e.preventDefault();
+    input.value = items[Number(it.dataset.i)];
+    hide();
+    if (onPick) onPick();
+  });
+  return { input, list, hide };
+}
+
+function setupProjectCombo() {
+  const input = $('project');
+  const list = $('projectList');
+  let active = -1;
+
+  function render() {
+    if (!PROJECT_ITEMS.length) {
+      list.innerHTML = '<div class="combo-empty">暂无项目：可直接输入服务名</div>';
+      list.hidden = false;
+      return;
+    }
+    list.innerHTML = PROJECT_ITEMS.map((p, i) =>
+      '<div class="combo-item" data-i="' + i + '" title="' + escHtml(p.display) + '">' + escHtml(p.display) + '</div>'
+    ).join('');
+    list.hidden = false;
+    active = -1;
+  }
+
+  function hide() { list.hidden = true; active = -1; }
+
+  function highlight() {
+    list.querySelectorAll('.combo-item').forEach((el, i) => el.classList.toggle('active', i === active));
+    const el = list.querySelector('.combo-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+
+  function pick(i) {
+    const p = PROJECT_ITEMS[i];
+    if (!p) return;
+    input.value = p.id;
+    hide();
+    onProjectChanged(p.id);
+  }
+
+  input.addEventListener('focus', render);
+  input.addEventListener('click', render);
+  input.addEventListener('mousedown', e => {
+    const v = input.value.trim();
+    const known = PROJECT_ITEMS.some(p => p.id === v);
+    if (!known) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  });
+  input.addEventListener('input', () => {
+    render();
+    const v = input.value.trim();
+    const hit = PROJECT_ITEMS.find(p => p.id.toLowerCase() === v.toLowerCase());
+    if (hit && hit.id !== currentProject) onProjectChanged(hit.id);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (list.hidden) render();
+      active = Math.min(active + 1, PROJECT_ITEMS.length - 1);
+      highlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = Math.max(active - 1, 0);
+      highlight();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active >= 0) pick(active);
+      else { hide(); onProjectChanged(input.value.trim()); }
+    } else if (e.key === 'Escape') {
+      hide();
+    }
+  });
+  input.addEventListener('blur', () => setTimeout(async () => {
+    hide();
+    const v = input.value.trim();
+    if (!v || v === currentProject) return;
+    const known = PROJECT_ITEMS.some(p => p.id.toLowerCase() === v.toLowerCase());
+    if (known) { onProjectChanged(v); return; }
+    try {
+      const st = await api('/api/state?project=' + encodeURIComponent(v));
+      if (st.repoPath) onProjectChanged(v);
+      else input.value = currentProject;
+    } catch (e) {
+      input.value = currentProject;
+    }
+  }, 120));
+  list.addEventListener('mousedown', e => {
+    const it = e.target.closest('.combo-item');
+    if (!it) return;
+    e.preventDefault();
+    pick(Number(it.dataset.i));
+  });
+}
+
+// ============================================================ 部署 Tab ====
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+async function loadState(project) {
+  if (!project) return;
+  try {
+    const st = await api('/api/state?project=' + encodeURIComponent(project));
+    $('repoPath').value = st.repoMode === 'manual' ? (st.repoPath || '') : '';
+    let repoText;
+    if (st.cloneError) {
+      repoText = '❌ 克隆失败: ' + st.cloneError;
+    } else if (st.gitUrl && st.repoMode === 'clone') {
+      repoText = '仓库 ' + st.gitUrl + '（托管克隆 ' + (st.repoPath || '') + '）';
+    } else if (st.repoPath) {
+      repoText = '本地仓库: ' + st.repoPath;
+    } else {
+      repoText = '未找到 Git 仓库：请确认 Shipwright 登录态以自动反查，或手动填写路径后点「设置仓库」。';
+    }
+    await loadBranches(project);
+    $('repoHint').textContent = repoText;
+    $('devBranch').value = st.devBranch || '';
+    $('qaBranch').value = st.qaBranch || '';
+    checkQaConvention();
+  } catch (e) {
+    setStatus('读取记忆失败: ' + e.message, 'error');
+  }
+}
+
+async function loadBranches(project, force) {
+  const hint = $('repoHint');
+  if (!project) { hint.textContent = '请先在上方选择项目。'; return; }
+  hint.textContent = '正在加载分支列表…';
+  try {
+    const data = await api('/api/branches?project=' + encodeURIComponent(project) + (force ? '&force=1' : ''));
+    branchOptions = data.branches || [];
+    hint.textContent = data.repoPath
+      ? '共 ' + branchOptions.length + ' 个远程分支，点击分支框可搜索选择'
+      : '未找到本地仓库，请手动填写路径后点击「设置仓库」。';
+  } catch (e) {
+    branchOptions = [];
+    hint.textContent = '加载分支失败: ' + e.message;
+  }
+}
+
+async function saveSelection() {
+  if (!currentProject) return;
+  try {
+    await post('/api/state', {
+      project: currentProject,
+      devBranch: $('devBranch').value.trim(),
+      qaBranch: $('qaBranch').value.trim()
+    });
+  } catch (e) {}
+}
+
+makeCombo('devBranch', 'devList', () => branchOptions, saveSelection);
+makeCombo('qaBranch', 'qaList', () => branchOptions, saveSelection);
+setupProjectCombo();
+
+function checkQaConvention() {
+  const qa = ($('qaBranch').value || '').trim();
+  const hint = $('qaHint');
+  if (!qa) { hint.textContent = ''; return; }
+  if (/^qa[-_]?\d{4}[-_]\d{1,2}(?:[-_]\d{1,2})?$/i.test(qa)) {
+    hint.textContent = '✅ 月度 QA 分支（测试环境当前使用的分支形式）';
+  } else if (/^qa$/i.test(qa)) {
+    hint.textContent = '⚠️ 固定的 qa 分支通常不是测试环境当前使用的分支，建议改用最新的 qa-YYYY-MM';
+  } else {
+    hint.textContent = '⚠️ 该分支不是 qa-YYYY-MM 形式，确认测试环境是否部署的是它';
+  }
+}
+$('qaBranch').addEventListener('input', checkQaConvention);
+$('qaBranch').addEventListener('blur', checkQaConvention);
+
+function onProjectChanged(value) {
+  const project = (value || '').trim();
+  if (!project) return;
+  currentProject = project;
+  $('status').textContent = '就绪';
+  branchOptions = [];
+  loadState(project);
+  ['logApp', 'apApp', 'wApApp', 'wDbApp'].forEach(id => { if ($(id) && !$(id).value) $(id).value = project; });
+}
+
+$('btnRepo').addEventListener('click', async () => {
+  if (!currentProject) return setStatus('请先选择项目', 'error');
+  try {
+    await post('/api/repo', { project: currentProject, path: $('repoPath').value.trim() });
+    await loadBranches(currentProject, true);
+    setStatus('仓库路径已保存', 'success');
+  } catch (e) {
+    setStatus(e.message, 'error');
+  }
+});
+
+$('btnBranches').addEventListener('click', () => currentProject && loadBranches(currentProject, true));
+
+async function refreshCredentialStatus() {
+  const hint = $('credHint');
+  try {
+    const c = await api('/api/credentials');
+    const s = c.shipwright, cl = c.cloud;
+    const line = '内网站点登录态 · Shipwright(构建): ' + (s.ok ? '✅ ' + s.message : '❌ ' + s.message) +
+      ' ｜ Cloud(部署): ' + (cl.ok ? '✅ ' + cl.message : '❌ ' + cl.message);
+    hint.textContent = line + (s.ok && cl.ok ? '' :
+      '。失效会导致「无法获取构建器」。修复：到「凭据」Tab 点对应条目的「刷新」。');
+  } catch (e) {
+    hint.textContent = '凭据检查失败: ' + e.message;
+  }
+}
+
+$('btnCred').addEventListener('click', refreshCredentialStatus);
+
+$('btnDeploy').addEventListener('click', async () => {
+  const project = $('project').value.trim();
+  const dev = $('devBranch').value.trim();
+  const qa = $('qaBranch').value.trim();
+  const mode = $('mode').value;
+  if (!project) return setStatus('请选择项目', 'error');
+  const needMerge = mode === 'merge_deploy' || mode === 'merge_only' || mode === 'preview';
+  if (needMerge && (!dev || !qa)) return setStatus('请选择开发分支与 QA 分支', 'error');
+  if (mode === 'deploy_dev' && !dev) return setStatus('请选择开发分支', 'error');
+  if ((mode === 'build_deploy' || mode === 'build_only') && !qa && !dev) return setStatus('请选择要构建的分支', 'error');
+
+  const promptMsg = needMerge
+    ? '即将把 [' + dev + '] 合并到 [' + qa + '] 并执行「' + modeLabel[mode] + '」，确认继续？'
+    : (mode === 'deploy_dev'
+      ? '即将直接构建部署开发分支 [' + dev + ']（不合并 QA），确认继续？'
+      : '即将对分支 [' + (qa || dev) + '] 执行「' + modeLabel[mode] + '」，确认继续？');
+  if (!confirm(promptMsg)) return;
+
+  currentProject = project;
+  await saveSelection();
+  $('verifyCard').style.display = 'none';
+  logStick = true;
+  updateFollowHint();
+  $('log').textContent = '任务提交中…';
+  let job;
+  try {
+    job = await post('/api/deploy', { project, devBranch: dev, qaBranch: qa, mode });
+  } catch (e) {
+    setStatus(e.message, 'error');
+    $('log').textContent = '❌ ' + e.message;
+    return;
+  }
+  lastJobId = job.id;
+  setStatus('执行中…', 'running');
+  $('btnDeploy').disabled = true;
+  startPolling(job.id);
+  loadJobs();
+});
+
+const STICK_THRESHOLD = 48;
+let logStick = true;
+
+function isLogAtBottom() {
+  const el = $('log');
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
+}
+
+function updateFollowHint() {
+  const tip = $('logFollow');
+  if (!tip) return;
+  tip.style.display = logStick ? 'none' : 'inline';
+}
+
+$('log').addEventListener('scroll', () => {
+  const stick = isLogAtBottom();
+  if (stick !== logStick) {
+    logStick = stick;
+    updateFollowHint();
+  }
+});
+
+$('btnFollow').addEventListener('click', e => {
+  e.preventDefault();
+  logStick = true;
+  updateFollowHint();
+  const el = $('log');
+  el.scrollTop = el.scrollHeight;
+});
+
+function setLogText(el, text) {
+  if (el.textContent === text) return false;
+  if (logStick) {
+    el.textContent = text;
+    el.scrollTop = el.scrollHeight;
+  } else {
+    const keep = el.scrollTop;
+    el.textContent = text;
+    el.scrollTop = keep;
+  }
+  return true;
+}
+
+function startPolling(jobId) {
+  if (pollTimer) clearInterval(pollTimer);
+  const tick = async () => {
+    try {
+      const job = await api('/api/job?id=' + encodeURIComponent(jobId));
+      setLogText($('log'), job.log || '');
+      if (job.status === 'running') {
+        setStatus('执行中…', 'running');
+      } else {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        $('btnDeploy').disabled = false;
+        if (job.status === 'success') {
+          setStatus(job.result && job.result.imageAddress ? '部署成功 · ' + job.result.imageAddress : '执行成功', 'success');
+          if ($('autoVerify').checked && job.project) verifyDeploy(job.project, job.mode);
+        } else {
+          setStatus('执行失败', 'error');
+        }
+        loadJobs();
+      }
+    } catch (e) {}
+  };
+  tick();
+  pollTimer = setInterval(tick, 1200);
+}
+
+async function verifyDeploy(project, mode) {
+  const card = $('verifyCard');
+  const body = $('verifyBody');
+  card.style.display = 'block';
+  if (mode === 'merge_only' || mode === 'preview') {
+    body.innerHTML = '<div class="hint" style="margin:0">本次模式未触发构建部署，跳过验活。</div>';
+    return;
+  }
+  body.innerHTML = '<div class="hint" style="margin:0">正在拉取 ' + escHtml(project) + ' 近 10 分钟测试环境 ERROR 日志…</div>';
+  try {
+    const r = await post('/api/verify', { project, minutes: '10m' });
+    body.innerHTML = renderVerify(r, project);
+  } catch (e) {
+    body.innerHTML = '<div class="warnbox" style="margin:0">验活失败：' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderVerify(r, project) {
+  if (!r.ok) {
+    return '<div class="warnbox" style="margin:0">未能获取日志：' + escHtml(r.error || r.stderr || '未知错误') + '</div>';
+  }
+  const j = r.json || {};
+  const logs = j.logs || [];
+  if (!logs.length) {
+    return '<div class="okbox">✅ 近 10 分钟未发现 ERROR 日志（' + escHtml(project) + '），服务看起来已经起来了。</div>';
+  }
+  let html = '<div class="warnbox" style="margin:0 0 12px">⚠️ 近 10 分钟有 ' + logs.length + ' 条 ERROR 日志，请确认是否为本次部署引入。</div>';
+  html += '<table><thead><tr><th style="width:150px">时间</th><th>日志</th></tr></thead><tbody>';
+  logs.forEach(l => {
+    const ts = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN') : '-';
+    const line = (l.line || '').replace(/^.*?stdout F /, '');
+    html += '<tr><td class="mono muted">' + escHtml(ts) + '</td><td class="mono" title="' + escHtml(line) + '">' + escHtml(line.slice(0, 400)) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+async function loadJobs() {
+  const box = $('jobList');
+  try {
+    const data = await api('/api/jobs');
+    const jobs = data.jobs || [];
+    if (!jobs.length) {
+      box.innerHTML = '<div class="combo-empty">暂无历史任务</div>';
+      return;
+    }
+    box.innerHTML = jobs.map(j => {
+      const cls = j.status === 'success' ? 'ok' : (j.status === 'running' ? 'warn' : 'err');
+      const t = j.startedAt ? new Date(j.startedAt).toLocaleString('zh-CN') : '';
+      return '<div class="jobitem' + (j.id === lastJobId ? ' sel' : '') + '" data-id="' + escHtml(j.id) + '">' +
+        '<div class="t1">' + escHtml(j.project || '-') + ' <span class="tag ' + cls + '">' + escHtml(j.status) + '</span></div>' +
+        '<div class="t2">' + escHtml(j.modeLabel || j.mode || '') + ' · ' + escHtml(t) + '</div>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="combo-empty">加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+$('jobList').addEventListener('click', async e => {
+  const it = e.target.closest('.jobitem');
+  if (!it) return;
+  lastJobId = it.dataset.id;
+  document.querySelectorAll('.jobitem').forEach(x => x.classList.toggle('sel', x === it));
+  try {
+    const job = await api('/api/job?id=' + encodeURIComponent(lastJobId));
+    const head = '历史任务 [' + (job.project || '-') + '] ' + (job.devBranch || '-') + ' → ' + (job.qaBranch || '-') +
+      ' (' + (modeLabel[job.mode] || job.mode) + ') · ' + job.status + String.fromCharCode(10, 10);
+    logStick = true;
+    updateFollowHint();
+    $('log').textContent = head + (job.log || '');
+    $('log').scrollTop = $('log').scrollHeight;
+    if (job.status === 'running') {
+      setStatus('该任务仍在执行…', 'running');
+      $('btnDeploy').disabled = true;
+      startPolling(job.id);
+    } else {
+      setStatus(job.status === 'success' ? '历史任务：执行成功' : '历史任务：执行失败', job.status === 'success' ? 'success' : 'error');
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      $('btnDeploy').disabled = false;
+    }
+    showTab('deploy');
+  } catch (err) {
+    toast('读取任务失败: ' + err.message, 'err');
+  }
+});
+$('btnJobs').addEventListener('click', loadJobs);
+
+// ========================================================== 日志检索 Tab ====
+makeCombo('logApp', 'logAppList', () => APP_ITEMS);
+makeCombo('apApp', 'apAppList', () => APP_ITEMS);
+makeCombo('wApApp', 'wApAppList', () => APP_ITEMS);
+makeCombo('wDbApp', 'wDbAppList', () => APP_ITEMS);
+
+function setLogStatus(text, cls) {
+  const el = $('logStatus');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+async function runLogQuery() {
+  const app = $('logApp').value.trim();
+  const source = $('logSource').value;
+  if (!app) { setLogStatus('请填写服务名', 'error'); return; }
+  setLogStatus('查询中…', 'running');
+  $('logResult').innerHTML = '<div class="combo-empty">查询中…</div>';
+  try {
+    const r = await post('/api/logs', {
+      source,
+      app,
+      query: $('logQuery').value.trim(),
+      level: $('logLevel').value,
+      time: $('logTime').value,
+      size: $('logSize').value
+    });
+    $('logResult').innerHTML = renderLogs(r, source);
+    setLogStatus(r.ok ? '完成' : '失败', r.ok ? 'success' : 'error');
+  } catch (e) {
+    $('logResult').innerHTML = '<div class="warnbox" style="margin:0">' + escHtml(e.message) + '</div>';
+    setLogStatus('失败', 'error');
+  }
+}
+
+function renderLogs(r, source) {
+  if (!r.ok) {
+    return '<div class="warnbox" style="margin:0">' + escHtml(r.error || r.stderr || r.stdout || '查询失败') + '</div>';
+  }
+  const j = r.json || {};
+  const logs = j.logs || [];
+  const meta = source === 'test'
+    ? 'Loki 表达式 ' + (j.expr || '-') + ' · 时间窗 ' + (j.timeRange || '-') + ' · 耗时 ' + (j.costMs || '-') + 'ms'
+    : '索引 ' + ((j.summary || {}).indexPattern || '-') + ' · 时间窗 ' + ((j.summary || {}).timeRange || '-') + ' · 命中 ' + ((j.summary || {}).totalHits || 0) + ' · 耗时 ' + ((j.summary || {}).totalCostMs || '-') + 'ms';
+  let html = '<div class="hint" style="margin:0 0 10px">' + escHtml(meta) + '　|　返回 ' + logs.length + ' 条</div>';
+  if (!logs.length) return html + '<div class="combo-empty">无匹配日志</div>';
+  html += '<table><thead><tr><th style="width:150px">时间</th><th style="width:60px">级别</th><th>内容</th></tr></thead><tbody>';
+  logs.forEach(l => {
+    let ts = '-', level = '', text = '';
+    if (source === 'test') {
+      ts = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN') : '-';
+      text = (l.line || '').replace(/^.*?stdout F /, '');
+      const m = text.match(/\b(ERROR|WARN|INFO|DEBUG)\b/);
+      level = m ? m[1] : '';
+    } else {
+      ts = l.timestamp ? String(l.timestamp).replace('T', ' ').slice(0, 23) : '-';
+      level = l.logLevel || '';
+      text = (l.uri ? '[' + l.uri + '] ' : '') + (l.message || '');
+    }
+    const lvlCls = level === 'ERROR' ? 'err' : (level === 'WARN' ? 'warn' : '');
+    html += '<tr><td class="mono muted">' + escHtml(ts) + '</td>' +
+      '<td>' + (level ? '<span class="tag ' + lvlCls + '">' + escHtml(level) + '</span>' : '') + '</td>' +
+      '<td class="mono" title="' + escHtml(text) + '">' + escHtml(text.slice(0, 500)) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+$('btnLogQuery').addEventListener('click', runLogQuery);
+$('btnLogError').addEventListener('click', () => { $('logLevel').value = 'ERROR'; runLogQuery(); });
+
+// ============================================================ Apollo Tab ====
+function setApStatus(text, cls) {
+  const el = $('apStatus');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+$('btnApQuery').addEventListener('click', async () => {
+  const app = $('apApp').value.trim();
+  if (!app) { setApStatus('请填写服务名', 'error'); return; }
+  setApStatus('查询中…', 'running');
+  $('apResultTitle').textContent = '配置明细';
+  $('apResult').innerHTML = '<div class="combo-empty">查询中…</div>';
+  try {
+    const r = await post('/api/apollo/query', { app, keyword: $('apKeyword').value.trim(), env: $('apEnv').value });
+    $('apResult').innerHTML = renderApolloQuery(r);
+    setApStatus(r.ok ? '完成' : '失败', r.ok ? 'success' : 'error');
+  } catch (e) {
+    $('apResult').innerHTML = '<div class="warnbox" style="margin:0">' + escHtml(e.message) + '</div>';
+    setApStatus('失败', 'error');
+  }
+});
+
+function renderApolloQuery(r) {
+  if (!r.ok) return '<div class="warnbox" style="margin:0">' + escHtml(r.error || r.stderr || r.stdout || '查询失败') + '</div>';
+  const j = r.json || {};
+  const results = j.results || {};
+  const namespaces = Object.keys(results);
+  let html = '<div class="hint" style="margin:0 0 10px">' + escHtml(j.resolvedAppId || '') + ' · ' + escHtml(j.envLabel || j.env || '') +
+    ' · 扫描 ' + (j.totalKeysScanned || 0) + ' 个 key，命中 ' + (j.totalMatched || 0) + ' 个 · 耗时 ' + (j.costMs || '-') + 'ms</div>';
+  if (!namespaces.length) return html + '<div class="combo-empty">无匹配配置</div>';
+  namespaces.forEach(ns => {
+    const kv = results[ns] || {};
+    const keys = Object.keys(kv);
+    html += '<h2 style="font-size:13px;margin:16px 0 8px">命名空间：' + escHtml(ns) + ' <span class="tag">' + keys.length + ' 项</span></h2>';
+    html += '<table><thead><tr><th style="width:38%">Key</th><th>Value</th></tr></thead><tbody>';
+    keys.forEach(k => {
+      const v = kv[k];
+      const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      html += '<tr><td class="mono">' + escHtml(k) + '</td><td class="mono" title="' + escHtml(s) + '">' + escHtml(s.length > 600 ? s.slice(0, 600) + ' …' : s) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  });
+  return html;
+}
+
+$('btnApHistory').addEventListener('click', async () => {
+  const app = $('apApp').value.trim();
+  const key = $('apHistoryKey').value.trim();
+  if (!app) { setApStatus('请填写服务名', 'error'); return; }
+  if (!key) { setApStatus('请填写要追溯的配置项 key', 'error'); return; }
+  setApStatus('追踪发布轨迹…', 'running');
+  $('apResultTitle').textContent = '发布轨迹';
+  $('apResult').innerHTML = '<div class="combo-empty">追踪中…</div>';
+  try {
+    const r = await post('/api/apollo/history', { app, key, env: $('apEnv').value });
+    $('apResult').innerHTML = renderApolloHistory(r);
+    setApStatus(r.ok ? '完成' : '失败', r.ok ? 'success' : 'error');
+  } catch (e) {
+    $('apResult').innerHTML = '<div class="warnbox" style="margin:0">' + escHtml(e.message) + '</div>';
+    setApStatus('失败', 'error');
+  }
+});
+
+function renderApolloHistory(r) {
+  if (!r.ok) return '<div class="warnbox" style="margin:0">' + escHtml(r.error || r.stderr || r.stdout || '查询失败') + '</div>';
+  const j = r.json || {};
+  const hist = j.history || [];
+  let html = '<div class="hint" style="margin:0 0 10px">' + escHtml(j.appId || '') + ' · ' + escHtml(j.envLabel || j.env || '') +
+    ' · 命名空间 ' + escHtml(j.namespace || '-') + ' · 扫描 ' + (j.scannedReleasesCount || 0) + ' 个版本，变更 ' + (j.changesCount || 0) + ' 次</div>';
+  const live = j.liveVerifiedValue;
+  html += '<div class="okbox" style="margin:0 0 12px">当前实时生效值：<span class="mono">' +
+    escHtml(live === null || live === undefined ? '（未在生效配置中）' : String(live)) + '</span></div>';
+  if (!hist.length) return html + '<div class="combo-empty">扫描范围内该配置项未发生变更</div>';
+  html += '<table><thead><tr><th style="width:120px">类型</th><th style="width:160px">发布时间</th><th style="width:110px">操作人</th><th>变更</th></tr></thead><tbody>';
+  hist.forEach(h => {
+    const cls = h.type === 'CREATE' ? 'ok' : (h.type === 'DELETE' ? 'err' : 'warn');
+    const before = h.oldValue === null || h.oldValue === undefined ? '（无）' : String(h.oldValue);
+    const after = h.newValue === null || h.newValue === undefined ? '（无）' : String(h.newValue);
+    html += '<tr><td><span class="tag ' + cls + '">' + escHtml(h.typeLabel || h.type) + '</span></td>' +
+      '<td class="mono muted">' + escHtml(String(h.releaseTime || '').replace('T', ' ')) + '</td>' +
+      '<td>' + escHtml(h.operator || '-') + '</td>' +
+      '<td class="mono"><span class="muted">' + escHtml(before.slice(0, 200)) + '</span> → ' + escHtml(after.slice(0, 300)) +
+      (h.comment ? '<div class="hint" style="margin-top:4px">备注：' + escHtml(h.comment) + '</div>' : '') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+// ============================================================ 写操作 Tab ====
+function wOut(text) {
+  $('wOut').textContent = text;
+}
+function setWStatus(id, text, cls) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+function wResult(r, title) {
+  $('wOutTitle').textContent = title;
+  const parts = [];
+  if (r.json) parts.push(JSON.stringify(r.json, null, 2));
+  if (r.stdout) parts.push(r.stdout);
+  if (r.stderr) parts.push('--- stderr ---' + String.fromCharCode(10) + r.stderr);
+  wOut(parts.filter(Boolean).join(String.fromCharCode(10, 10)) || '（无输出）');
+}
+
+$('writeTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-w]');
+  if (!b) return;
+  document.querySelectorAll('#writeTabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.wsec').forEach(s => { s.style.display = s.id === 'w-' + b.dataset.w ? '' : 'none'; });
+});
+
+$('wApPre').addEventListener('click', async () => {
+  const app = $('wApApp').value.trim(), key = $('wApKey').value.trim(), value = $('wApValue').value;
+  if (!app || !key) { setWStatus('wApStatus', '请填写服务名与 key', 'error'); return; }
+  if (value === '') { setWStatus('wApStatus', '请填写新的值', 'error'); return; }
+  setWStatus('wApStatus', '预检中…', 'running');
+  $('wApCommit').disabled = true;
+  try {
+    const r = await post('/api/write/apollo', {
+      app, key, value, namespace: $('wApNs').value.trim(),
+      type: $('wApType').value, comment: $('wApComment').value.trim(), confirm: false
+    });
+    wResult(r, 'Apollo 变更预检');
+    if (r.ok) { setWStatus('wApStatus', '预检通过，请核对 Diff 后确认提交', 'success'); $('wApCommit').disabled = false; }
+    else setWStatus('wApStatus', '预检失败', 'error');
+  } catch (e) {
+    wOut(e.message); setWStatus('wApStatus', '预检失败', 'error');
+  }
+});
+
+$('wApCommit').addEventListener('click', async () => {
+  if (!confirm('确认把 Apollo 配置 [' + $('wApKey').value.trim() + '] 写入测试环境并发布？')) return;
+  setWStatus('wApStatus', '提交中…', 'running');
+  $('wApCommit').disabled = true;
+  try {
+    const r = await post('/api/write/apollo', {
+      app: $('wApApp').value.trim(), key: $('wApKey').value.trim(), value: $('wApValue').value,
+      namespace: $('wApNs').value.trim(), type: $('wApType').value,
+      comment: $('wApComment').value.trim(), confirm: true
+    });
+    wResult(r, 'Apollo 变更提交结果');
+    setWStatus('wApStatus', r.ok ? '已提交并发布' : '提交失败', r.ok ? 'success' : 'error');
+    toast(r.ok ? 'Apollo 配置已发布' : 'Apollo 提交失败', r.ok ? 'ok' : 'err');
+  } catch (e) {
+    wOut(e.message); setWStatus('wApStatus', '提交失败', 'error');
+  }
+});
+
+$('wEsPre').addEventListener('click', async () => {
+  const svc = $('wEsApp').value.trim(), id = $('wEsId').value.trim(), action = $('wEsAction').value;
+  if (!svc || !id) { setWStatus('wEsStatus', '请填写索引与文档 ID', 'error'); return; }
+  setWStatus('wEsStatus', '预检中…', 'running');
+  $('wEsCommit').disabled = true;
+  try {
+    const r = await post('/api/write/es', { service: svc, action, id, data: $('wEsData').value.trim(), confirm: false });
+    wResult(r, 'ES 变更预检 (Dry-Run Diff)');
+    if (r.ok) { setWStatus('wEsStatus', '预检通过，请核对 Diff 后确认提交', 'success'); $('wEsCommit').disabled = false; }
+    else setWStatus('wEsStatus', '预检失败', 'error');
+  } catch (e) {
+    wOut(e.message); setWStatus('wEsStatus', '预检失败', 'error');
+  }
+});
+
+$('wEsCommit').addEventListener('click', async () => {
+  if (!confirm('确认对测试环境 ES 执行 ' + $('wEsAction').value + '（ID: ' + $('wEsId').value.trim() + '）？')) return;
+  setWStatus('wEsStatus', '提交中…', 'running');
+  $('wEsCommit').disabled = true;
+  try {
+    const r = await post('/api/write/es', {
+      service: $('wEsApp').value.trim(), action: $('wEsAction').value,
+      id: $('wEsId').value.trim(), data: $('wEsData').value.trim(), confirm: true
+    });
+    wResult(r, 'ES 写入结果');
+    setWStatus('wEsStatus', r.ok ? '已写入' : '写入失败', r.ok ? 'success' : 'error');
+    toast(r.ok ? 'ES 写入完成' : 'ES 写入失败', r.ok ? 'ok' : 'err');
+  } catch (e) {
+    wOut(e.message); setWStatus('wEsStatus', '写入失败', 'error');
+  }
+});
+
+function kafkaSets() {
+  return $('wKfSets').value.split(String.fromCharCode(10)).map(s => s.trim()).filter(Boolean);
+}
+
+$('wKfPre').addEventListener('click', async () => {
+  const topic = $('wKfTopic').value.trim();
+  if (!topic) { setWStatus('wKfStatus', '请填写 Topic', 'error'); return; }
+  setWStatus('wKfStatus', '预检中…', 'running');
+  $('wKfCommit').disabled = true;
+  try {
+    const r = await post('/api/write/kafka', {
+      topic, data: $('wKfData').value.trim(), key: $('wKfKey').value.trim(),
+      sets: kafkaSets(), confirm: false
+    });
+    wResult(r, 'Kafka 投递预检');
+    if (r.ok) { setWStatus('wKfStatus', '预检通过，请核对消息体后确认投递', 'success'); $('wKfCommit').disabled = false; }
+    else setWStatus('wKfStatus', '预检失败', 'error');
+  } catch (e) {
+    wOut(e.message); setWStatus('wKfStatus', '预检失败', 'error');
+  }
+});
+
+$('wKfCommit').addEventListener('click', async () => {
+  if (!confirm('确认向测试环境 Kafka Topic [' + $('wKfTopic').value.trim() + '] 投递这条消息？')) return;
+  setWStatus('wKfStatus', '投递中…', 'running');
+  $('wKfCommit').disabled = true;
+  try {
+    const r = await post('/api/write/kafka', {
+      topic: $('wKfTopic').value.trim(), data: $('wKfData').value.trim(),
+      key: $('wKfKey').value.trim(), sets: kafkaSets(), confirm: true
+    });
+    wResult(r, 'Kafka 投递结果');
+    setWStatus('wKfStatus', r.ok ? '投递完成' : '投递失败', r.ok ? 'success' : 'error');
+    toast(r.ok ? 'Kafka 消息已投递' : 'Kafka 投递失败', r.ok ? 'ok' : 'err');
+  } catch (e) {
+    wOut(e.message); setWStatus('wKfStatus', '投递失败', 'error');
+  }
+});
+
+const SQL_READ = /^\s*(select|show|desc|describe|explain)\b/i;
+
+$('wDbPre').addEventListener('click', async () => {
+  const svc = $('wDbApp').value.trim(), sql = $('wDbSql').value.trim();
+  if (!svc || !sql) { setWStatus('wDbStatus', '请填写服务与 SQL', 'error'); return; }
+  const isRead = SQL_READ.test(sql);
+  setWStatus('wDbStatus', isRead ? '查询中…' : '预检中…', 'running');
+  $('wDbCommit').disabled = true;
+  try {
+    const r = await post('/api/write/mysql', { service: svc, datasource: $('wDbDs').value.trim(), sql, confirm: false });
+    wResult(r, isRead ? 'SQL 查询结果' : 'SQL 预检');
+    if (isRead) {
+      setWStatus('wDbStatus', r.ok ? '查询完成' : '查询失败', r.ok ? 'success' : 'error');
+      $('wDbCommit').disabled = true;
+    } else if (r.ok) {
+      setWStatus('wDbStatus', '预检通过，确认后才会执行写入', 'success');
+      $('wDbCommit').disabled = false;
+    } else {
+      setWStatus('wDbStatus', '预检失败', 'error');
+    }
+  } catch (e) {
+    wOut(e.message); setWStatus('wDbStatus', '预检失败', 'error');
+  }
+});
+
+$('wDbCommit').addEventListener('click', async () => {
+  const sql = $('wDbSql').value.trim();
+  if (SQL_READ.test(sql)) { toast('这条是只读语句，已直接执行，无需确认', 'err'); return; }
+  if (!confirm('确认在测试库执行这条写入 SQL？' + String.fromCharCode(10, 10) + sql.slice(0, 300))) return;
+  setWStatus('wDbStatus', '执行中…', 'running');
+  $('wDbCommit').disabled = true;
+  try {
+    const r = await post('/api/write/mysql', {
+      service: $('wDbApp').value.trim(), datasource: $('wDbDs').value.trim(), sql, confirm: true
+    });
+    wResult(r, 'SQL 执行结果');
+    setWStatus('wDbStatus', r.ok ? '执行完成' : '执行失败', r.ok ? 'success' : 'error');
+    toast(r.ok ? 'SQL 已执行' : 'SQL 执行失败', r.ok ? 'ok' : 'err');
+  } catch (e) {
+    wOut(e.message); setWStatus('wDbStatus', '执行失败', 'error');
+  }
+});
+
+// ============================================================== credentials ====
+let credItems = [];
+let credBusy = {};
+let credProbe = {};
+let credDir = '~/.shrimp/skills/live-inspector/';
+let credLoading = false;
+const pendingLoginIds = new Set();
+
+function fmtTimeParts(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return { abs: String(iso), rel: '' };
+  const pad = n => String(n).padStart(2, '0');
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  let rel;
+  if (mins < 1) rel = '刚刚';
+  else if (mins < 60) rel = mins + ' 分钟前';
+  else if (mins < 1440) rel = Math.floor(mins / 60) + ' 小时前';
+  else rel = Math.floor(mins / 1440) + ' 天前';
+  return { abs: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), rel };
+}
+
+function setCredStatus(text, cls) {
+  const el = $('credStatus');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+function renderCredentials() {
+  const body = $('credBody');
+  if (!credItems.length) { body.className = 'muted'; body.textContent = '暂无凭据登记'; return; }
+  body.className = '';
+  const byGroup = new Map();
+  for (const it of credItems) {
+    if (!byGroup.has(it.group)) byGroup.set(it.group, []);
+    byGroup.get(it.group).push(it);
+  }
+  let html = '';
+  for (const [group, items] of byGroup) {
+    html += '<h3 style="font-size:13px;margin:4px 0 8px;color:var(--muted);font-weight:600">' + escHtml(group) + '</h3>' +
+      '<table class="cred" style="margin-bottom:20px"><thead><tr><th style="width:20%">平台</th><th style="width:27%">凭据文件</th>' +
+      '<th style="width:11%">状态</th><th style="width:11%">上次更新</th><th style="width:31%">操作</th></tr></thead><tbody>';
+    for (const it of items) {
+      const busy = credBusy[it.id];
+      const waitingLogin = pendingLoginIds.has(it.id);
+      const dot = it.exists ? '<span class="tag ok">已保存</span>' : '<span class="tag err">缺失</span>';
+      const envTip = it.envOverride ? '<span class="tag warn" title="环境变量优先于本地文件">ENV 覆盖</span>' : '';
+      const waitTag = waitingLogin ? ' <span class="tag warn">待登录切回</span>' : '';
+      const pr = credProbe[it.id];
+      const probeTag = !pr ? '' : (pr.busy ? ' <span class="tag">探活中…</span>'
+        : (pr.ok ? ' <span class="tag ok" title="' + escHtml(pr.message) + '">登录态正常</span>'
+          : ' <span class="tag err" title="' + escHtml(pr.message) + '">需重新登录</span>'));
+      const allNames = it.names || [];
+      const preview = allNames.slice(0, 2).join(', ');
+      const names = allNames.length
+        ? '<div class="cred-line mono muted" title="' + escHtml(allNames.join(', ')) + '">' +
+          '<b>' + allNames.length + ' 个</b> · ' + escHtml(preview) + (allNames.length > 2 ? ' …' : '') + '</div>'
+        : '';
+      html += '<tr><td><b>' + escHtml(it.label) + '</b>' +
+        (it.url ? '<div class="mono muted" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escHtml(it.url) + '">' + escHtml(it.url) + '</div>' : '') +
+        (it.note ? '<div class="hint" style="margin-top:4px">' + escHtml(it.note) + '</div>' : '') + '</td>' +
+        '<td class="mono">' + escHtml(it.file) + (it.kind === 'apikey' ? ' <span class="tag">API Key</span>' : '') + names + '</td>' +
+        '<td>' + dot + probeTag + waitTag + ' ' + envTip + '</td>' +
+        '<td class="hint" style="margin:0">' + (() => {
+          const t = fmtTimeParts(it.updatedAt);
+          return t ? escHtml(t.abs) + (t.rel ? '<div style="font-size:11px">' + escHtml(t.rel) + '</div>' : '') : '—';
+        })() + '</td>' +
+        '<td><div class="cred-ops">' +
+        (it.probeSupported ? '<button class="sm" data-cred-probe="' + it.id + '"' + (busy ? ' disabled' : '') + '>探活</button>' : '') +
+        (it.kind === 'apikey' ? '' :
+          '<button class="sm" data-cred-refresh="' + it.id + '"' + (busy ? ' disabled' : '') + '>' + (busy ? '同步中…' : '刷新') + '</button>' +
+          '<button class="sm ghost" data-cred-open="' + it.id + '" title="在新标签页打开站点登录页，登录完切回本页自动同步">登录页</button>') +
+        '<button class="sm ghost" data-cred-save="' + it.id + '" title="手动粘贴 Cookie / cookies.txt / JSON">粘贴</button>' +
+        '<button class="sm ghost" data-cred-clear="' + it.id + '"' + (it.exists ? '' : ' disabled') + '>清除</button>' +
+        '</div></td></tr>';
+    }
+    html += '</tbody></table>';
+  }
+  html += '<div class="hint">凭据目录：<code>' + escHtml(credDir) + '</code>　·　值为空说明浏览器里没读到该站点登录态。</div>';
+  body.innerHTML = html;
+}
+
+async function loadCredentials() {
+  if (credLoading) return;
+  credLoading = true;
+  setCredStatus('扫描中…', 'running');
+  try {
+    const r = await api('/api/credential-list');
+    credItems = r.items || [];
+    credDir = r.dir || credDir;
+    $('credDir').textContent = credDir;
+    renderCredentials();
+    const missing = credItems.filter(x => !x.exists).length;
+    setCredStatus(missing ? missing + ' 项缺失 / ' + credItems.length + ' 项 · 刷新即自动落盘' : '全部已保存', missing ? 'running' : 'success');
+  } catch (e) {
+    setCredStatus('扫描失败: ' + e.message, 'error');
+  } finally {
+    credLoading = false;
+  }
+}
+
+function patchCred(def) {
+  if (!def) return;
+  const i = credItems.findIndex(x => x.id === def.id);
+  if (i >= 0) credItems[i] = def;
+  renderCredentials();
+}
+
+async function refreshOne(id, { silentOnNeedLogin = false } = {}) {
+  if (credBusy[id]) return;
+  const it = credItems.find(x => x.id === id);
+  credBusy[id] = true;
+  delete credProbe[id];
+  renderCredentials();
+  setCredStatus('正在同步 ' + (it ? it.label : id) + ' 的登录态…', 'running');
+  try {
+    const r = await post('/api/credential/refresh', { id });
+    patchCred(r.def);
+    if (r.ok) {
+      pendingLoginIds.delete(id);
+      credProbe[id] = { ok: true, message: r.message };
+      setCredStatus((it ? it.label : id) + ' 已同步：' + r.message, 'success');
+      toast((it ? it.label : id) + ' 凭据已同步', 'ok');
+    } else if (r.needLogin && !silentOnNeedLogin) {
+      pendingLoginIds.add(id);
+      const loginUrl = r.loginUrl || (it && (it.loginUrl || it.url));
+      if (loginUrl) window.open(loginUrl, '_blank', 'noopener');
+      setCredStatus(r.message, 'running');
+      toast('已打开登录页，登录完切回本页即自动同步', 'warn');
+    } else if (!silentOnNeedLogin) {
+      setCredStatus((it ? it.label : id) + ' 未同步：' + r.message, 'error');
+      toast(r.message, 'err');
+    }
+  } catch (e) {
+    if (!silentOnNeedLogin) {
+      setCredStatus('同步失败: ' + e.message, 'error');
+      toast(e.message, 'err');
+    }
+  } finally {
+    credBusy[id] = false;
+    renderCredentials();
+  }
+}
+
+// 当用户在新标签页完成登录、切回控制台页面时，自动触发单次静默同步（零后台高频轮询）
+async function syncPendingLoginsOnFocus() {
+  if (!pendingLoginIds.size || document.visibilityState === 'hidden') return;
+  const ids = [...pendingLoginIds];
+  for (const id of ids) {
+    await refreshOne(id, { silentOnNeedLogin: true });
+  }
+}
+window.addEventListener('focus', syncPendingLoginsOnFocus);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncPendingLoginsOnFocus();
+});
+
+$('credReload').addEventListener('click', loadCredentials);
+
+$('credRefreshAll').addEventListener('click', async () => {
+  const targets = credItems.filter(x => x.exists && x.kind !== 'apikey').map(x => x.id);
+  if (!targets.length) { toast('没有已保存的 Cookie 凭据可同步', 'err'); return; }
+  for (const id of targets) await refreshOne(id, { silentOnNeedLogin: true });
+  setCredStatus('批量静默同步完成', 'success');
+});
+
+$('credBody').addEventListener('click', async e => {
+  const probe = e.target.closest('[data-cred-probe]');
+  if (probe) {
+    const id = probe.dataset.credProbe;
+    credProbe[id] = { busy: true };
+    renderCredentials();
+    try {
+      const r = await post('/api/credential/probe', { id });
+      credProbe[id] = { ok: Boolean(r.ok), message: r.message || '' };
+      toast((r.ok ? '✅ ' : '❌ ') + (r.message || ''), r.ok ? 'ok' : 'err');
+    } catch (err) {
+      credProbe[id] = { ok: false, message: err.message };
+      toast(err.message, 'err');
+    }
+    renderCredentials();
+    return;
+  }
+  const refresh = e.target.closest('[data-cred-refresh]');
+  if (refresh) return refreshOne(refresh.dataset.credRefresh);
+
+  const open = e.target.closest('[data-cred-open]');
+  if (open) {
+    const id = open.dataset.credOpen;
+    const it = credItems.find(x => x.id === id) || {};
+    const targetUrl = it.loginUrl || it.url;
+    if (!targetUrl) { toast('该凭据无登录页地址', 'err'); return; }
+    pendingLoginIds.add(id);
+    renderCredentials();
+    window.open(targetUrl, '_blank', 'noopener');
+    setCredStatus('已在新标签页打开 ' + targetUrl + '，登录完成后切回本页面将自动同步', 'running');
+    toast('已打开登录页', 'ok');
+    return;
+  }
+
+  const save = e.target.closest('[data-cred-save]');
+  if (save) {
+    const id = save.dataset.credSave;
+    const it = credItems.find(x => x.id === id) || {};
+    const label = it.label || id;
+    const tip = it.kind === 'apikey'
+      ? '粘贴 ARMS API Key：'
+      : '粘贴 ' + label + ' 的凭据（Cookie 头 / cookies.txt / JSON 均可）：';
+    const value = prompt(tip + String.fromCharCode(10) + '注意：内容只写入本机文件，不会经过网络。', '');
+    if (value === null || !value.trim()) return;
+    try {
+      const r = await post('/api/credential/save', { id, value });
+      pendingLoginIds.delete(id);
+      patchCred(r.def);
+      toast('已保存', 'ok');
+      setCredStatus(label + ' ' + (r.message || '已保存'), 'success');
+    } catch (err) { toast(err.message, 'err'); }
+    return;
+  }
+
+  const clear = e.target.closest('[data-cred-clear]');
+  if (clear) {
+    const id = clear.dataset.credClear;
+    const it = credItems.find(x => x.id === id) || {};
+    if (!confirm('确定清除本机凭据文件 ' + (it.file || id) + '？清除后相关功能会提示未登录。')) return;
+    try {
+      const r = await post('/api/credential/clear', { id });
+      pendingLoginIds.delete(id);
+      patchCred(r.def);
+      toast('已清除', 'ok');
+      setCredStatus((it.label || id) + ' ' + (r.message || '已清除'), 'success');
+    } catch (err) { toast(err.message, 'err'); }
+  }
+});
+
+// ================================================================== init ====
+async function init() {
+  try {
+    const hash = (location.hash || '').replace(/^#/, '');
+    const saved = hash || localStorage.getItem('leo.tab');
+    if (saved) showTab(saved);
+  } catch (e) {}
+  window.addEventListener('hashchange', () => {
+    const name = (location.hash || '').replace(/^#/, '');
+    if (name) showTab(name);
+  });
+  try {
+    const data = await api('/api/initial');
+    if (data.lastProject) {
+      $('project').value = data.lastProject;
+      currentProject = data.lastProject;
+      await loadState(currentProject);
+    }
+  } catch (e) {}
+  refreshCredentialStatus();
+  loadJobs();
+  try {
+    const { jobs } = await api('/api/jobs');
+    if (jobs && jobs.length) {
+      const last = jobs[0];
+      lastJobId = last.id;
+      const job = await api('/api/job?id=' + encodeURIComponent(last.id));
+      $('log').textContent = '最近任务 [' + last.project + '] ' + last.devBranch + ' → ' + last.qaBranch + ' (' + (last.modeLabel || last.mode) + ') · ' + last.status + String.fromCharCode(10, 10) + (job.log || '');
+      logStick = true;
+      updateFollowHint();
+      $('log').scrollTop = $('log').scrollHeight;
+      setStatus(last.status === 'success' ? '上次执行成功' : (last.status === 'running' ? '上次任务仍在执行' : '上次执行失败'), last.status === 'success' ? 'success' : (last.status === 'running' ? 'running' : 'error'));
+    }
+  } catch (e) {}
+}
+init();
+</script>
+</body>
+</html>

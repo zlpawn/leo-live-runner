@@ -156,7 +156,19 @@
   },
   "beijia-iot-warehouse": {
     "index": "index-13831-14876*",
-    "cluster": "https://fast105-kibana-logcenter-intra.intra.ke.com"
+    "cluster": "https://fast105-kibana-logcenter-intra.intra.ke.com",
+    "ci": {
+      "workflowId": "66581d9e4c3d1f1f08b5836e",
+      "workflowName": "beijia-iot-warehouse -测试环境",
+      "defaultBranch": "qa-2026-8-28"
+    },
+    "deploy": {
+      "test": {
+        "workloadId": "env-beijia-iot-warehouse-test-1lc",
+        "workloadName": "beijia-iot-warehouse-test",
+        "deployType": "normal"
+      }
+    }
   },
   "iot-warehouse": {
     "index": "index-13831-14876*",
