@@ -58,7 +58,9 @@ const KNOWN_API_PATHS = new Set([
   '/api/ptree/get_systems',
   '/api/ptree/get_subsystems',
   '/api/enum/get_enum',
-  '/api/fsm/change_status'
+  '/api/fsm/change_status',
+  '/api/bi/get_person_report_distribution',
+  '/api/bi/get_person_report_summary'
 ]);
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
@@ -421,6 +423,33 @@ export async function getWorkbenchList({ category = 'estimate', quickCheck = 'al
   });
 }
 
+// get_estimate_role 的代码→名称映射，进程内缓存（一次会话读一次即可）
+let ESTIMATE_ROLE_MAP = null;
+
+/** 取角色代码→名称映射（ER0001 → RD）。失败时退化为空表，不阻塞排期查询 */
+export async function getEstimateRoleMap({ cookie, refresh = false } = {}) {
+  if (ESTIMATE_ROLE_MAP && !refresh) return ESTIMATE_ROLE_MAP;
+  try {
+    const rows = await executeOnesApi({ path: '/api/requirements/get_estimate_role', cookie });
+    const map = {};
+    (Array.isArray(rows) ? rows : []).forEach(r => {
+      if (r && r.code) map[String(r.code)] = r.value || String(r.code);
+    });
+    ESTIMATE_ROLE_MAP = map;
+    return map;
+  } catch {
+    ESTIMATE_ROLE_MAP = {};
+    return ESTIMATE_ROLE_MAP;
+  }
+}
+
+/** 把角色代码翻成可读名称；未知代码原样返回 */
+export function roleLabel(code, map = {}) {
+  const c = String(code || '').trim();
+  if (!c) return '';
+  return map[c] || c;
+}
+
 function overlaps(rowStart, rowEnd, from, to) {
   if (!from && !to) return true;
   const s = rowStart ? String(rowStart).slice(0, 10) : '';
@@ -438,13 +467,17 @@ function overlaps(rowStart, rowEnd, from, to) {
  * ONES 工作台的 estimate 列表固定按「当前登录人」返回，person 只用于校验/标注。
  */
 export async function getMySchedule({ from, to, person, includeBugs = false, cookie } = {}) {
-  const data = await getWorkbenchList({ category: 'estimate', limit: 1000, cookie });
+  const [data, roleMap] = await Promise.all([
+    getWorkbenchList({ category: 'estimate', limit: 1000, cookie }),
+    getEstimateRoleMap({ cookie })
+  ]);
   const rows = (data?.datalist || []).map(row => ({
     requireId: row.require_id,
     estimateId: row.estimate_id,
     title: row.title || '',
     action: row.action || '',
-    role: row.role_code || '',
+    roleCode: row.role_code || '',
+    role: roleLabel(row.role_code, roleMap),
     member: row.member || '',
     manHours: row.man_hour ?? 0,
     finished: Number(row.finished) === 1,
@@ -474,6 +507,148 @@ export async function getMySchedule({ from, to, person, includeBugs = false, coo
     out.bugs = (bugs?.datalist || []).map(normalizeBug);
   }
   return out;
+}
+
+// ------------------------------------------------------------ 个人工时概览 ----
+
+/** ONES 个人工时页（https://ones.ke.com/profile/manhour）背后的日历接口 */
+export const ONES_MANHOUR_PAGE = ONES_ORIGIN + '/profile/manhour';
+
+/**
+ * 一天的工时判定。
+ *
+ * 判据来自 ONES 自己：`is_workday` 已经算好法定节假日与调休（国庆 10/1~10/7
+ * 是 0，10/10 周六调休上班是 1），不需要我们内置节假日表。
+ *
+ * - 非工作日：有工时记为「加班」，没有记为「假」
+ * - 工作日：等于 1 天记「满」，小于 1 记「不足」，大于 1 记「超量」，0 记「缺」
+ */
+export const MANHOUR_STATUS = {
+  full: { key: 'full', label: '已打满', tone: 'ok' },
+  short: { key: 'short', label: '不足', tone: 'warn' },
+  over: { key: 'over', label: '超出', tone: 'err' },
+  missing: { key: 'missing', label: '未打', tone: 'err' },
+  off: { key: 'off', label: '假', tone: 'muted' },
+  overtime: { key: 'overtime', label: '加班', tone: 'info' },
+  // 未来工作日：还没到，不是「漏打」，不能报成红色告警
+  pending: { key: 'pending', label: '待打', tone: 'muted' }
+};
+
+/** 一天应为多少工时；ONES 默认 1 人天，作为判满基准 */
+export const MANHOUR_TARGET = 1;
+
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+
+function classifyDay(manHour, isWorkday) {
+  const h = round2(manHour);
+  if (!isWorkday) return h > 0 ? MANHOUR_STATUS.overtime : MANHOUR_STATUS.off;
+  if (h <= 0) return MANHOUR_STATUS.missing;
+  if (Math.abs(h - MANHOUR_TARGET) < 0.005) return MANHOUR_STATUS.full;
+  return h < MANHOUR_TARGET ? MANHOUR_STATUS.short : MANHOUR_STATUS.over;
+}
+
+/**
+ * 把 distribution 接口的原始行归一化成「每天一条」，并补上判定与汇总。
+ *
+ * 返回的 days 按日期升序，未来日期也会出现（ONES 会返回整段时间窗），
+ * 由上层决定是否隐藏。
+ */
+export function normalizeManhourDays(rows, { today = null } = {}) {
+  const t = today || new Date().toISOString().slice(0, 10);
+  const days = (rows || []).map(r => {
+    const date = String(r.day || '').slice(0, 10);
+    const isWorkday = Number(r.is_workday) === 1;
+    const manHour = round2(r.man_hour);
+    const isFuture = Boolean(date && date > t);
+    const status = isFuture && isWorkday && manHour <= 0 ? MANHOUR_STATUS.pending : classifyDay(manHour, isWorkday);
+    return {
+      date,
+      weekDay: r.week_day || '',
+      isWorkday,
+      manHour,
+      status: status.key,
+      statusLabel: status.label,
+      tone: status.tone,
+      isFuture,
+      isToday: date === t
+    };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+
+  const workdays = days.filter(d => d.isWorkday && !d.isFuture);
+  const summary = {
+    totalDays: days.length,
+    workdays: workdays.length,
+    manHours: round2(days.reduce((a, d) => a + d.manHour, 0)),
+    full: workdays.filter(d => d.status === 'full').length,
+    short: workdays.filter(d => d.status === 'short').length,
+    missing: workdays.filter(d => d.status === 'missing').length,
+    over: workdays.filter(d => d.status === 'over').length,
+    off: days.filter(d => d.status === 'off').length,
+    overtime: days.filter(d => d.status === 'overtime').length,
+    expected: round2(workdays.length * MANHOUR_TARGET),
+    gap: round2(workdays.reduce((a, d) => a + (MANHOUR_TARGET - d.manHour), 0))
+  };
+  summary.unfilled = workdays.filter(d => d.status !== 'full')
+    .map(d => ({ date: d.date, weekDay: d.weekDay, manHour: d.manHour, status: d.status, statusLabel: d.statusLabel }));
+  return { days, summary };
+}
+
+/**
+ * 个人工时概览（`/api/bi/get_person_report_distribution`）。
+ */
+export async function getMyManHours({ from, to, displayName = null, today = null, all = false, cookie } = {}) {
+  let name = displayName;
+  if (!name) {
+    const me = await getCurrentUser({ cookie });
+    name = me.displayName;
+    if (me.account && !String(name).includes('(')) name = `${name}(${me.account})`;
+  }
+  const body = await executeOnesApi({
+    path: '/api/bi/get_person_report_distribution',
+    params: { display_name: name, start_time: from, end_time: to },
+    cookie
+  });
+  const { days, summary } = normalizeManhourDays(body?.datalist, { today });
+  const visible = all ? days : days.filter(d => !d.isFuture);
+  return {
+    person: body?.display_name || name,
+    range: { from: body?.start_time || from, to: body?.end_time || to },
+    totalManHour: round2(body?.total_man_hour),
+    days: visible,
+    summary,
+    pageUrl: ONES_MANHOUR_PAGE
+  };
+}
+
+/** 同一时间窗的工时汇总（总人天 / 需求 / 缺陷 / 工作性质占比），与日历互补 */
+export async function getMyManHourSummary({ from, to, displayName = null, cookie } = {}) {
+  let name = displayName;
+  if (!name) {
+    const me = await getCurrentUser({ cookie });
+    name = me.displayName;
+    if (me.account && !String(name).includes('(')) name = `${name}(${me.account})`;
+  }
+  const body = await executeOnesApi({
+    path: '/api/bi/get_person_report_summary',
+    params: { display_name: name, start_time: from, end_time: to },
+    cookie
+  });
+  return {
+    person: body?.display_name || name,
+    range: { from: String(body?.start_time || from).slice(0, 10), to: String(body?.end_time || to).slice(0, 10) },
+    totalManHour: round2(body?.total_man_hour),
+    requirementManHour: round2(body?.total_requirement_man_hour),
+    bugManHour: round2(body?.total_bug_man_hour),
+    workOrderManHour: round2(body?.total_work_order_man_hour),
+    pmShare: body?.pm_req_hour || '',
+    devShare: body?.dev_req_hour || '',
+    otherShare: body?.other_req_hour || '',
+    requirementCount: body?.partice_req_num ?? 0,
+    bugAddCount: body?.bug_add_num ?? 0,
+    bugResolveCount: body?.bug_resolve_num ?? 0,
+    commitTimes: body?.code_commit_times ?? 0,
+    commitLines: body?.code_commit_lines ?? 0
+  };
 }
 
 export async function queryRequirements({
@@ -548,16 +723,53 @@ export async function getEstimateDetail(requireId, { cookie } = {}) {
   };
 }
 
-export async function listBugs({ id, requireId, requireIds, summary, resolver, sprintId, limit = 20, page = 1, cookie } = {}) {
+export async function listBugs({ id, requireId, requireIds, summary, resolver, sprintId, limit = 20, page = 1, cookie, scan = 600 } = {}) {
   const body = { page, limit };
   if (id) body.id = Number(id);
   if (requireId) body.require_ids = [Number(requireId)];
   if (requireIds?.length) body.require_ids = requireIds.map(Number);
-  if (summary) body.summary = summary;
+  // get_bugs 服务端只认 id / resolver / require_ids / sprint_id 等精确字段；
+  // summary / kw / title / search 等模糊字段全部被静默忽略，并返回全库 3.5 万条。
+  // 所以标题过滤只能本地做：从最新往旧翻页扫描 scan 条，再按关键词筛。
   if (resolver) body.resolver = resolver;
   if (sprintId !== undefined && sprintId !== null && sprintId !== '') body.sprint_id = Number(sprintId);
-  const data = await executeOnesApi({ path: '/api/bug/get_bugs', method: 'POST', postBody: body, cookie });
-  return { total: data?.totalcount ?? 0, items: (data?.datalist || []).map(normalizeBug) };
+
+  const wantSummary = String(summary || '').trim();
+  const want = Math.max(Number(limit) || 20, 1);
+  const scanCount = Math.max(Number(scan) || 600, want);
+
+  if (!wantSummary) {
+    const data = await executeOnesApi({ path: '/api/bug/get_bugs', method: 'POST', postBody: body, cookie });
+    return { total: data?.totalcount ?? 0, items: (data?.datalist || []).map(normalizeBug) };
+  }
+
+  // 分页扫描：服务端每页固定返回 10 条，不受 limit 控制，只能靠翻页累积
+  const kw = wantSummary.toLowerCase();
+  const matched = [];
+  const maxPages = Math.ceil(scanCount / 10) + 5;
+  let scanned = 0;
+
+  for (let p = 1; p <= maxPages; p++) {
+    const data = await executeOnesApi({
+      path: '/api/bug/get_bugs',
+      method: 'POST',
+      postBody: { ...body, page: p, limit: 10 },
+      cookie
+    });
+    const rows = data?.datalist || [];
+    if (!rows.length) break;
+    scanned += rows.length;
+    for (const r of rows) {
+      if (String(r.summary || '').toLowerCase().includes(kw)) matched.push(r);
+    }
+    if (matched.length >= want) break;
+  }
+
+  return {
+    total: matched.length,
+    scanned,
+    items: matched.slice(0, want).map(normalizeBug)
+  };
 }
 
 export async function listIterations({ level = null, keyword = '', limit = 200, cookie } = {}) {

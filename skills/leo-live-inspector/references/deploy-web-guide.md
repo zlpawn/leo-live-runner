@@ -12,16 +12,33 @@
 
 ---
 
-## 一、启动方式
+## 一、启动方式（幂等复用与代码指纹自动热重载）
 
 ```bash
-node scripts/deploy_web.js --open          # 启动并自动在浏览器打开 http://127.0.0.1:6886
+node scripts/deploy_web.js --open          # 幂等启动并在浏览器打开 http://127.0.0.1:6886
+node scripts/deploy_web.js --restart       # 强制重启当前端口上的控制台实例
+node scripts/deploy_web.js --stop          # 停止当前端口上的控制台实例
 node scripts/deploy_web.js --port 6899     # 指定其他本地端口
 ```
 
+- **代码指纹（`buildId`）自动检测**：`scripts/web_console/server.js` 在启动时对 `deploy_web.js`、`web_console/*` 与 `common/*.js` 计算 12 位 SHA-1 指纹，并通过 `GET /api/initial` 暴露 `{ lastProject, buildId, pid }`；
+- **同版本直接复用、跨版本自动重启**：再次执行 `node scripts/deploy_web.js` 时，若目标端口已有控制台在运行且 `buildId` 一致，直接复用现有进程；若代码已更新（`buildId` 不一致）或传了 `--restart`，自动平滑终止旧进程并启动新实例。
+
 ---
 
-## 二、通用项目发现（零配置覆盖全量服务）
+## 二、核心视图与高性能双主题
+
+1. **首页 · 近三周工时概览（`#homeManhour`）**：
+   - 打开首页即自动拉取**上周 / 本周 / 下周**（21 天）的 ONES 个人工时日历，按周横向并排对比哪天已打满（绿）、不足（黄）、未打/超出（红）、非工作日（灰）或未来待打（虚框）。
+2. **ONES 研发协作工作台（`#page-ones`）**：
+   - 聚合 `工时概览`（默认子页，含 4 项统计卡、月历视图与未打满工作日明细）、`我的排期`（含本周/本月/上一月/上周一~本周日/本周一~下周五 5 档快捷预设与请求序号防乱序覆盖）、`需求详情`、`需求检索`、`缺陷检索`、`迭代 / 项目` 以及两阶段 `写入`（新建需求、新建缺陷、调整排期、移入迭代、状态流转，均强制「预检 Diff → 确认提交」）。
+3. **亮色 / 暗色双主题与零闪烁滚动**：
+   - 支持右上角一键切换亮色/暗色主题（持久化至 `localStorage['leo.theme']`，亦支持 `?theme=light|dark` 参数直达），`<head>` 首帧同步落属性防闪烁；
+   - **渲染性能守卫**：全站禁用 `backdrop-filter`、`background-attachment: fixed`、`filter: blur()` 与卡片悬停 `translateY`，消除长页面滚动时的合成层重算与白块闪烁。
+
+---
+
+## 三、通用项目发现（零配置覆盖全量服务）
 
 项目清单不再局限于手工编写的 JSON，而是按 **4 级自动发现** 聚合全量服务：
 
@@ -32,7 +49,7 @@ node scripts/deploy_web.js --port 6899     # 指定其他本地端口
 
 ---
 
-## 三、双模使用（AI 对话 vs 网页控制台）
+## 四、双模使用（AI 对话 vs 网页控制台）
 
 「隔离 worktree 合并开发分支到最新 `qa-YYYY-MM` 并构建部署」既可以在网页控制台点按钮，也可以直接在 IDE 对话中由 AI 调用 `ci_deploy.js` 完成：
 
@@ -46,7 +63,7 @@ node scripts/ci_deploy.js zulin-iot-platform --merge-from feature/my-branch
 
 ---
 
-## 四、凭据台账与焦点切回自动同步（零高频轮询、免改扩展）
+## 五、凭据台账与焦点切回自动同步（零高频轮询、免改扩展）
 
 凭据 Tab 汇总全部 **18 项** 平台凭据（含 ONES 研发管理平台），页面只展示元信息（是否存在、更新时间、Cookie 名清单），**绝不向前端返回 Cookie / Token 值**。
 
@@ -58,7 +75,7 @@ node scripts/ci_deploy.js zulin-iot-platform --merge-from feature/my-branch
 
 ---
 
-## 五、安全边界
+## 六、安全边界
 
 1. **本地防跨站 CSRF 保护**：服务启动时生成随机 `SESSION_CSRF_TOKEN`，所有 `POST /api/*` 强制校验 `Host`、`Origin` 同源以及 `X-Leo-Token` 请求头，阻断外部网页跨站调用本地接口；
 2. **任务 ID 严格校验**：`/api/job?id=` 强制校验 `/^[A-Za-z0-9_-]{1,64}$/`，阻断路径穿越；

@@ -6,7 +6,7 @@ ONES（KeOnes，`https://ones.ke.com`）是公司研发过程管理平台：需�
 
 | 脚本 | 性质 | 用途 |
 | :--- | :--- | :--- |
-| `scripts/ones_query.js` | 只读 | 我的排期、需求详情、需求/缺陷检索、迭代、项目、枚举、人员、层级树 |
+| `scripts/ones_query.js` | 只读 | 我的排期、个人工时概览、需求详情、需求/缺陷检索、迭代、项目、枚举、人员、层级树 |
 | `scripts/ones_modify.js` | 写操作（两阶段确认） | 新建需求、新建缺陷、调整排期、移入迭代、状态流转 |
 
 ---
@@ -67,15 +67,34 @@ node scripts/ones_query.js schedule --with-bugs
 
 每条估时（estimate）包含：`require_id / estimate_id / title / action（开发/联调/技术设计/测试/其他） / role_code / member / man_hour / start_time / end_time / finished / sprint_id / sprint_title / date_distribution`。
 
-脚本会做两件事：
-1. 按 `--from/--to` 与 `start_time~end_time` 求交集过滤（服务端忽略 `start_date/end_date` 参数，必须本地过滤）；
-2. 按 `require_id` 聚合成「这个时间窗里我要交付哪些需求、各多少总人天」。
+脚本会做三件事：
+1. 自动调用 `GET /api/requirements/get_estimate_role` 拉取角色码字典（进程内缓存，失败时优雅降级），将底层 `role_code`（如 `ER0001` → `RD`、`ER0002` → `FE`、`ER0003` → `QA`、`ER0007` → `PM`）翻译为易读名称赋给 `role`，同时保留原始 `roleCode`；
+2. 按 `--from/--to` 与 `start_time~end_time` 求交集过滤（服务端忽略 `start_date/end_date` 参数，必须本地过滤）；
+3. 按 `require_id` 聚合成「这个时间窗里我要交付哪些需求、各多少总人天」。
 
 **重要限制**：`quick_check=allaboutme` 只返回**当前登录人**的数据；服务端忽略 `email_prefix` / `member` 参数（实测传他人账号仍返回自己的 16 条）。所以「查某人的排期」不能直接做——脚本会在 `--person` 与当前登录人不一致时给出 `warning` 并说明替代路径：
 - 用 `ones_query.js reqs --pm <账号>` 查此人作为 PM 的需求；
 - 对单个需求用 `ones_query.js req <id>` 看全员估时明细（`get_estimate_and_schedule_detail` 会返回所有角色成员的估时）。
 
 `category` 只能取 `all / bug / require / approval / onlinebug / trace / onlinecheck / estimate / workorder / cr / onlineplan / feedback`。
+
+### 2.2b 个人工时概览（`manhour`）
+
+```bash
+node scripts/ones_query.js manhour
+node scripts/ones_query.js manhour --from 2026-11-01 --to 2026-11-30 --all --json
+```
+
+对应 ONES 个人工时页（`https://ones.ke.com/profile/manhour`）背后的两个只读 BI 接口：
+- `GET /api/bi/get_person_report_distribution?display_name=<姓名(账号)>&start_time=<YYYY-MM-DD>&end_time=<YYYY-MM-DD>`：返回窗口内每一天的 `day / week_day / is_workday / man_hour`；
+- `GET /api/bi/get_person_report_summary`：返回同窗口的总人天、需求/缺陷/工单人天、PM/开发/其他占比、参与需求数与代码提交统计。
+
+**逐日状态判定（基准 `MANHOUR_TARGET = 1` 人天）**：
+- 法定节假日与周末调休完全以 ONES 返回的 `is_workday`（`1`=工作日，`0`=非工作日）为准，无需本地维护节假日表；
+- **非工作日**：`man_hour > 0` 记为 `overtime`（🌙 加班），否则记为 `off`（· 假）；
+- **未来工作日**（`date > today` 且 `man_hour <= 0`）：记为 `pending`（⏳ 待打），不计入漏打告警；
+- **已过/今日工作日**：`= 1` 记为 `full`（✅ 已打满），`0 < h < 1` 记为 `short`（🟡 不足），`h > 1` 记为 `over`（🔴 超出），`h <= 0` 记为 `missing`（⛔ 未打）。
+- 默认只展示截至今天的日期；加 `--all` 时连同未来日期一并返回（供 Web 控制台渲染完整月历/周历）。
 
 ### 2.3 需求详情
 
@@ -141,7 +160,8 @@ node scripts/ones_query.js bugs --id 10413977
 
 接口：`POST /api/bug/get_bugs`
 
-生效参数：`id`（精确）、`summary`（模糊）、`resolver`、`sprint_id`、`require_ids[]`、`page`、`limit`。
+生效参数：`id`（精确）、`resolver`、`sprint_id`、`require_ids[]`、`page`、`limit`。
+注意：服务端会静默忽略 `summary` / `kw` 等模糊字段并固定每页返回 10 条；因此传 `--summary` 时，脚本会自动从最新往旧分页扫描（默认最多扫描 600 条）并在本地按标题关键词过滤。
 缺陷状态是英文枚举：`open / reopen / processed / rejected / deferred / fixed / closed`；`category` 是中文枚举（见 `enums bug`）。
 
 ### 2.6 迭代（Sprint）与项目
@@ -325,6 +345,7 @@ node scripts/ones_modify.js advance <bugId> --event 删除 --confirm
 | 用户说 | AI 执行 |
 | :--- | :--- |
 | 我这个月的排期 / 这周要做什么 | `ones_query.js schedule --from … --to …` |
+| 我这个月工时打满没 / 哪天漏打了工时 | `ones_query.js manhour [--from … --to …]` |
 | 查下需求 50564297 / 钥匙箱那个需求什么状态 | `ones_query.js req <id\|关键词>` |
 | IoT-2026-10-27 这个迭代有哪些需求 | `ones_query.js reqs --sprint IoT-2026-10-27` |
 | 这个需求关联了哪些缺陷 | `ones_query.js req <id>`（末段自动带关联缺陷） |

@@ -86,12 +86,13 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 | **“查下【测试环境】saas 库的订单数据”** | `node scripts/test_mysql_query.js saas "SELECT * FROM algo_detect_report ORDER BY id DESC LIMIT 5"` | 测试环境默认主库直连表格，毫秒级响应 | [database-guide.md](references/database-guide.md) |
 | **“往测试环境 saas 库插一条配置数据 / 更新状态”** | `node scripts/test_mysql_query.js saas "INSERT INTO ..."` / `"UPDATE ... WHERE ..."` | 执行 DML 写入，返回 affectedRows (严格顶层 WHERE 保护) | [database-guide.md](references/database-guide.md) |
 | **“把当前分支（或合进最新 QA 分支后）构建部署到测试环境”** | **阶段 1 (Pre-flight 预审)**：识别分支与目标泳道（若需合流 QA 则用 `--merge-from <devBranch> --dry-run` 预演隔离合并），推送部署确认卡片；<br>**阶段 2 (确认后)**：执行 `node scripts/ci_deploy.js [--merge-from <devBranch>]` (后端) / `node scripts/feci_deploy.js` (前端) | 自动识别 Git 分支（支持隔离 worktree 合入最新 `qa-YYYY-MM`），触发流水线构建并自动部署测试环境 | [ci-deploy-guide.md](references/ci-deploy-guide.md) |
-| **“打开测试环境控制台（可选独立网页入口）”** | `node scripts/deploy_web.js --open` | 启动独立模块化控制台 (`scripts/web_console/`)：支持部署合流、日志、Apollo、写操作预检确认与 18 项凭据台账 | [deploy-web-guide.md](references/deploy-web-guide.md) |
+| **“打开测试环境控制台（可选独立网页入口）”** | `node scripts/deploy_web.js --open` | 幂等启动独立模块化控制台 (`scripts/web_console/`)：支持首页近三周工时、ONES 研发协作、部署合流、日志、Apollo、写操作预检确认与 18 项凭据台账 | [deploy-web-guide.md](references/deploy-web-guide.md) |
 | **“把 smart-customer-service 部署到线上/生产环境”** | **执行发布参谋模式 (坚决拦截生产直写)** | **严禁自动化生产部署！** 交付《部署参谋单》与服务云直达链接 | [ci-deploy-guide.md](references/ci-deploy-guide.md) |
 | **“用 Dinsight 查近 7 天北京成交量”** | `node scripts/dinsight_query.js "近7天北京成交量"` | 自然语言查数结论，含工具调用与 SSE 摘要 | [dinsight-query-guide.md](references/dinsight-query-guide.md) |
 | **“在这个页面上抓数据 / 测一下 / 导出长图”** | `node scripts/cli/index.mjs state` / `eval` / `screenshot` / `net-start` | 驱动真实 Chrome 执行结构化数据抓取与 API 嗅探 (线上一律只读) | [browser-guide.md](references/browser-guide.md) |
 | **“查下钥匙箱 860734086841437 腾讯云状态与最新报文”** | `node scripts/tencent_iot_query.js 860734086841437 -n 5` | 设备在线状态、核心已订阅 Topic 报文解码与流转明细 | [tencent-iot-guide.md](references/tencent-iot-guide.md) |
-| **“看下我这个月/这周的排期”** | `node scripts/ones_query.js schedule --from 2026-11-01 --to 2026-11-30` | 按时窗过滤的估时条目 + 按需求聚合的交付窗口与总人天 | [ones-guide.md](references/ones-guide.md) |
+| **“看下我这个月/这周的排期”** | `node scripts/ones_query.js schedule --from 2026-11-01 --to 2026-11-30` | 按时窗过滤的估时条目（角色码自动译为 RD/QA/FE/PM）+ 按需求聚合的交付窗口与总人天 | [ones-guide.md](references/ones-guide.md) |
+| **“看下我这个月工时打满没 / 哪天漏打了工时”** | `node scripts/ones_query.js manhour [--from 2026-11-01 --to 2026-11-30]` | 逐日工时状态（已打满/不足/未打/超出/假/加班/待打）、差额统计与未打满工作日清单 | [ones-guide.md](references/ones-guide.md) |
 | **“查下需求 50564297 / 钥匙箱那个需求什么状态”** | `node scripts/ones_query.js req <id\|标题关键词>` | 状态、优先级、产品经理、迭代、层级、排期、全员估时、关联缺陷、可流转事件 | [ones-guide.md](references/ones-guide.md) |
 | **“IoT-2026-10-27 这个迭代有哪些需求 / 某人负责哪些需求”** | `node scripts/ones_query.js reqs --sprint <迭代\|ID>` / `reqs --pm <账号>` | 需求列表（状态/优先级/迭代/PM/标题），支持层级与标题过滤 | [ones-guide.md](references/ones-guide.md) |
 | **“这个需求关联了哪些缺陷 / 查下某人的缺陷”** | `node scripts/ones_query.js req <id>` / `bugs --resolver <人名>` / `bugs --summary <关键词>` | 关联缺陷列表与缺陷检索（状态/优先级/处理人） | [ones-guide.md](references/ones-guide.md) |

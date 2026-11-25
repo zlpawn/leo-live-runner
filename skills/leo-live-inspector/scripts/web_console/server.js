@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveAppId, loadServiceCatalog, getServiceCiDeployMeta } from '../common/services.js';
@@ -44,6 +44,34 @@ const STATE_FILE = path.join(SHRIMP_DIR, 'deploy_ui_state.json');
 const JOB_DIR = path.join(SHRIMP_DIR, 'deploy_jobs');
 
 export const SESSION_CSRF_TOKEN = randomBytes(24).toString('hex');
+
+/**
+ * 计算控制台代码指纹（SHA-1 前 12 位），用于幂等启动时判定运行中实例是否需要自动重启
+ */
+export function computeBuildId(scriptsDir = SCRIPTS_DIR) {
+  const hash = createHash('sha1');
+  const files = [
+    path.join(scriptsDir, 'deploy_web.js'),
+    path.join(scriptsDir, 'web_console', 'server.js'),
+    path.join(scriptsDir, 'web_console', 'index.html')
+  ];
+  const commonDir = path.join(scriptsDir, 'common');
+  try {
+    const names = fs.readdirSync(commonDir).filter(f => f.endsWith('.js')).sort();
+    for (const name of names) files.push(path.join(commonDir, name));
+  } catch {}
+  for (const file of files) {
+    try {
+      hash.update(path.relative(scriptsDir, file));
+      hash.update('\0');
+      hash.update(fs.readFileSync(file));
+      hash.update('\0');
+    } catch {}
+  }
+  return hash.digest('hex').slice(0, 12);
+}
+
+export const BUILD_ID = computeBuildId();
 
 // ---------------------------------------------------------------- state ----
 
@@ -713,7 +741,9 @@ const SCRIPTS = {
   apolloModify: path.join(SCRIPTS_DIR, 'apollo_modify.js'),
   esModify: path.join(SCRIPTS_DIR, 'es_modify.js'),
   kafkaSend: path.join(SCRIPTS_DIR, 'kafka_send.js'),
-  mysqlQuery: path.join(SCRIPTS_DIR, 'test_mysql_query.js')
+  mysqlQuery: path.join(SCRIPTS_DIR, 'test_mysql_query.js'),
+  onesQuery: path.join(SCRIPTS_DIR, 'ones_query.js'),
+  onesModify: path.join(SCRIPTS_DIR, 'ones_modify.js')
 };
 
 function runScript(script, args, timeoutMs = 180_000) {
@@ -839,7 +869,7 @@ export function createDeployWebServer() {
 
       if (req.method === 'GET' && route === '/api/initial') {
         const lastProject = state.lastProject || Object.keys(state.branches)[0] || '';
-        return json(res, 200, { lastProject });
+        return json(res, 200, { lastProject, buildId: BUILD_ID, pid: process.pid });
       }
 
       if (req.method === 'GET' && route === '/api/apps') {
@@ -1062,6 +1092,126 @@ export function createDeployWebServer() {
         return scriptResult(res, r, b.confirm === true ? '已提交并发布' : '预检完成');
       }
 
+      // ------------------------------------------------------- ONES 研发协作 ----
+      // ONES 是协作系统（无测试环境），不受「生产只读」约束；但写入仍走两阶段：
+      // confirm=false 只跑 Dry-Run 出 Diff，confirm=true 才带 --confirm 落库。
+      if (req.method === 'POST' && route === '/api/ones/query') {
+        const b = await readBody(req);
+        const cmd = (b.cmd || '').trim();
+        const args = [];
+        if (cmd === 'schedule') {
+          args.push('schedule');
+          if (b.from) args.push('--from', String(b.from));
+          if (b.to) args.push('--to', String(b.to));
+        } else if (cmd === 'manhour') {
+          args.push('manhour');
+          if (b.from) args.push('--from', String(b.from));
+          if (b.to) args.push('--to', String(b.to));
+          if (b.all === true) args.push('--all');
+        } else if (cmd === 'req') {
+          const key = (b.key || '').trim();
+          if (!key) return json(res, 400, { error: '缺少需求 ID 或标题关键词' });
+          args.push('req', key);
+          if (b.limit) args.push('--limit', String(b.limit));
+        } else if (cmd === 'reqs') {
+          args.push('reqs');
+          const sprint = (b.sprint || '').trim();
+          const pm = (b.pm || '').trim();
+          const title = (b.title || '').trim();
+          const level = (b.level || '').trim();
+          if (!sprint && !pm && !title && !level) return json(res, 400, { error: '至少填一个过滤条件' });
+          if (sprint) args.push('--sprint', sprint);
+          if (pm) args.push('--pm', pm);
+          if (title) args.push('--title', title);
+          if (level) args.push('--level', level);
+          if (b.limit) args.push('--limit', String(b.limit));
+        } else if (cmd === 'bugs') {
+          args.push('bugs');
+          if (b.id) args.push('--id', String(b.id));
+          if (b.resolver) args.push('--resolver', String(b.resolver));
+          if (b.summary) args.push('--summary', String(b.summary));
+          if (b.requireId) args.push('--require-id', String(b.requireId));
+          args.push('--limit', String(b.limit || 10));
+        } else if (cmd === 'iterations') {
+          args.push('iterations');
+          if (b.keyword) args.push(String(b.keyword));
+        } else if (cmd === 'projects') {
+          args.push('projects');
+          if (b.keyword) args.push(String(b.keyword));
+        } else {
+          return json(res, 400, { error: '不支持的 ONES 查询命令' });
+        }
+        args.push('--json');
+        return scriptResult(res, await runScript(SCRIPTS.onesQuery, args));
+      }
+
+      if (req.method === 'POST' && route === '/api/ones/write') {
+        const b = await readBody(req);
+        const cmd = (b.cmd || '').trim();
+        const confirm = b.confirm === true;
+        const args = [];
+        const push = (flag, val) => {
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            args.push(flag, String(val).trim());
+          }
+        };
+
+        if (cmd === 'create-req') {
+          if (!String(b.title || '').trim()) return json(res, 400, { error: '缺少需求标题' });
+          if (!String(b.level || '').trim()) return json(res, 400, { error: '缺少层级' });
+          if (!String(b.pm || '').trim()) return json(res, 400, { error: '缺少产品经理' });
+          args.push('create-req');
+          push('--title', b.title);
+          push('--level', b.level);
+          push('--project', b.project);
+          push('--pm', b.pm);
+          push('--sprint', b.sprint);
+          push('--priority', b.priority);
+          push('--type', b.type);
+          push('--desc', b.desc);
+          if (b.withSafetyFunc !== false) args.push('--with-safety-func');
+        } else if (cmd === 'create-bug') {
+          if (!String(b.summary || '').trim()) return json(res, 400, { error: '缺少缺陷标题' });
+          if (!String(b.resolver || '').trim()) return json(res, 400, { error: '缺少处理人' });
+          args.push('create-bug');
+          push('--summary', b.summary);
+          push('--resolver', b.resolver);
+          push('--require-id', b.requireId);
+          push('--priority', b.priority);
+          push('--type', b.type);
+          push('--find-way', b.findWay);
+          push('--desc', b.desc);
+          push('--man-hour', b.manHour);
+          push('--level', b.level);
+        } else if (cmd === 'schedule') {
+          if (!String(b.id || '').trim()) return json(res, 400, { error: '缺少需求 ID' });
+          args.push('schedule', String(b.id).trim());
+          push('--develop-start', b.developStart);
+          push('--develop-end', b.developEnd);
+          push('--test-start', b.testStart);
+          push('--test-end', b.testEnd);
+          push('--submit-test', b.submitTest);
+          push('--online', b.online);
+        } else if (cmd === 'move') {
+          if (!String(b.ids || '').trim()) return json(res, 400, { error: '缺少需求 ID' });
+          if (!String(b.sprint || '').trim()) return json(res, 400, { error: '缺少目标迭代' });
+          args.push('move', String(b.ids).trim());
+          push('--sprint', b.sprint);
+        } else if (cmd === 'advance') {
+          if (!String(b.id || '').trim()) return json(res, 400, { error: '缺少 ID' });
+          if (!String(b.event || '').trim()) return json(res, 400, { error: '缺少流转事件' });
+          args.push('advance', String(b.id).trim());
+          push('--event', b.event);
+          if (b.kind === 'bug') args.push('--kind', 'bug');
+        } else {
+          return json(res, 400, { error: '不支持的 ONES 写命令' });
+        }
+
+        if (confirm) args.push('--confirm');
+        const r = await runScript(SCRIPTS.onesModify, args, 180_000);
+        return scriptResult(res, r, confirm ? '已提交' : '预检完成');
+      }
+
       if (req.method === 'POST' && route === '/api/write/es') {
         const b = await readBody(req);
         const service = (b.service || '').trim();
@@ -1154,15 +1304,131 @@ export function createDeployWebServer() {
   });
 }
 
-export function startDeployWebConsole(argv = process.argv.slice(2)) {
+function pidFile(port) {
+  return path.join(SHRIMP_DIR, `console-${port}.pid`);
+}
+
+function writePidFile(port) {
+  try {
+    fs.mkdirSync(SHRIMP_DIR, { recursive: true });
+    fs.writeFileSync(pidFile(port), JSON.stringify({ pid: process.pid, port, buildId: BUILD_ID, startedAt: new Date().toISOString() }));
+  } catch {}
+}
+
+function removePidFile(port) {
+  try {
+    const raw = fs.readFileSync(pidFile(port), 'utf8');
+    const data = JSON.parse(raw);
+    if (!data?.pid || data.pid === process.pid) fs.unlinkSync(pidFile(port));
+  } catch {}
+}
+
+export async function probeConsole(port, host = '127.0.0.1') {
+  try {
+    const res = await fetch(`http://${host}:${port}/api/initial`, {
+      signal: AbortSignal.timeout(1500)
+    });
+    if (!res.ok) return { running: false };
+    const data = await res.json();
+    if (!data || typeof data !== 'object' || !('lastProject' in data)) return { running: false };
+    return {
+      running: true,
+      buildId: data.buildId || null,
+      pid: data.pid || null,
+      lastProject: data.lastProject || ''
+    };
+  } catch {
+    return { running: false };
+  }
+}
+
+async function stopExistingConsole(port, host = '127.0.0.1') {
+  const probe = await probeConsole(port, host);
+  let targetPid = probe.pid;
+  if (!targetPid) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(pidFile(port), 'utf8'));
+      targetPid = saved?.pid || null;
+    } catch {}
+  }
+  if (!probe.running && !targetPid) {
+    try { fs.unlinkSync(pidFile(port)); } catch {}
+    return { stopped: false, reason: 'not_running' };
+  }
+  if (targetPid && targetPid !== process.pid) {
+    try { process.kill(targetPid, 'SIGTERM'); } catch {}
+    const deadline = Date.now() + 2500;
+    while (Date.now() < deadline) {
+      const check = await probeConsole(port, host);
+      if (!check.running) break;
+      await new Promise(r => setTimeout(r, 120));
+    }
+    const afterTerm = await probeConsole(port, host);
+    if (afterTerm.running) {
+      try { process.kill(targetPid, 'SIGKILL'); } catch {}
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+  try { fs.unlinkSync(pidFile(port)); } catch {}
+  return { stopped: true, pid: targetPid };
+}
+
+function openBrowserUrl(url) {
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  try {
+    const child = spawn(opener, process.platform === 'win32' ? ['', url] : [url], { stdio: 'ignore', detached: true });
+    child.on('error', () => {});
+    child.unref();
+  } catch {}
+}
+
+export async function startDeployWebConsole(argv = process.argv.slice(2)) {
   const portIdx = argv.findIndex(a => a === '--port' || a === '-p');
   const port = portIdx !== -1 && argv[portIdx + 1] ? Number(argv[portIdx + 1]) : 6886;
   const host = '127.0.0.1';
+  const url = `http://${host}:${port}`;
+  const wantOpen = argv.includes('--open') && !argv.includes('--no-open');
+  const wantRestart = argv.includes('--restart');
+  const wantStop = argv.includes('--stop');
+  const wantJson = argv.includes('--json');
+
+  if (wantStop) {
+    const res = await stopExistingConsole(port, host);
+    if (wantJson) {
+      console.log(JSON.stringify({ ok: true, action: res.stopped ? 'stopped' : 'not_running', port, pid: res.pid || null }));
+    } else if (res.stopped) {
+      console.log(`🛑 已停止控制台（端口 ${port}${res.pid ? `，PID ${res.pid}` : ''}）`);
+    } else {
+      console.log(`ℹ️ 端口 ${port} 上没有正在运行的控制台`);
+    }
+    return null;
+  }
+
+  const probe = await probeConsole(port, host);
+  if (probe.running) {
+    if (!wantRestart && probe.buildId === BUILD_ID) {
+      if (wantJson) {
+        console.log(JSON.stringify({ ok: true, action: 'reused', url, port, pid: probe.pid, buildId: BUILD_ID }));
+      } else {
+        console.log(`\n♻️ 控制台已在运行（版本一致 ${BUILD_ID}，直接复用）`);
+        console.log(`   URL: ${url}  (PID: ${probe.pid || '未知'})\n`);
+      }
+      if (wantOpen) openBrowserUrl(url);
+      return null;
+    }
+    if (!wantJson) {
+      console.log(wantRestart
+        ? `🔄 正在重启端口 ${port} 上的控制台（旧 PID: ${probe.pid || '未知'}）…`
+        : `🔄 检测到控制台代码已更新（运行中 ${probe.buildId || '旧版'} → 当前 ${BUILD_ID}），正在自动重启…`);
+    }
+    await stopExistingConsole(port, host);
+  }
+
   const server = createDeployWebServer();
 
   server.on('error', err => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`\n❌ 端口 ${port} 已被占用。可能控制台已在运行，或使用 --port <其它端口>。\n`);
+      console.error(`\n❌ 端口 ${port} 已被占用。可能非控制台进程占用了该端口，或使用 --port <其它端口>。\n`);
       process.exit(1);
     }
     console.error('服务异常:', err.message);
@@ -1170,31 +1436,36 @@ export function startDeployWebConsole(argv = process.argv.slice(2)) {
   });
 
   server.listen(port, host, () => {
-    const url = `http://${host}:${port}`;
+    writePidFile(port);
     try {
       const html = buildHtmlPage();
-      const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] || '';
-      new Function(script); // eslint-disable-line no-new-func
-      console.log(`\n✅ 页面脚本自检通过`);
+      const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+      if (!blocks.length) throw new Error('页面里找不到任何内联脚本');
+      blocks.forEach((code, i) => {
+        try {
+          new Function(code); // eslint-disable-line no-new-func
+        } catch (err) {
+          throw new Error(`第 ${i + 1} 个脚本块解析失败: ${err.message}`);
+        }
+      });
+      if (!wantJson) console.log(`\n✅ 页面脚本自检通过（${blocks.length} 个脚本块 · buildId=${BUILD_ID}）`);
     } catch (err) {
       console.error(`\n❌ 页面脚本自检失败（页面可能无法正常使用）: ${err.message}`);
     }
-    console.log(`\n🌐 Leo Live Inspector 测试环境部署控制台已启动`);
-    console.log(`   URL: ${url}`);
-    console.log(`   提示: 仅在测试环境执行「合并 QA 分支 + 构建部署」，生产环境物理只读。`);
-    console.log(`   按 Ctrl+C 停止服务。\n`);
-    if (argv.includes('--open')) {
-      const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-      try {
-        const child = spawn(opener, process.platform === 'win32' ? ['', url] : [url], { stdio: 'ignore', detached: true });
-        child.on('error', () => {});
-        child.unref();
-      } catch {}
+    if (wantJson) {
+      console.log(JSON.stringify({ ok: true, action: probe.running ? 'restarted' : 'started', url, port, pid: process.pid, buildId: BUILD_ID }));
+    } else {
+      console.log(`\n🌐 Leo Live Inspector 测试环境部署控制台已启动`);
+      console.log(`   URL: ${url}`);
+      console.log(`   提示: 仅在测试环境执行「合并 QA 分支 + 构建部署」，生产环境物理只读。`);
+      console.log(`   按 Ctrl+C 停止服务。\n`);
     }
+    if (wantOpen) openBrowserUrl(url);
   });
 
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {
+      removePidFile(port);
       server.close(() => process.exit(0));
       setTimeout(() => process.exit(0), 1500).unref();
     });
