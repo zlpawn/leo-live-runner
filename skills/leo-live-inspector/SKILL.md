@@ -163,6 +163,7 @@ flowchart TD
 ## 🔌 凭据自动获取与中继概览
 
 - **内生中继机制**：默认复用本地 `~/.shrimp/skills/live-inspector/` 下的缓存凭据；仅在凭据缺失或明确鉴权失败时，通过 `127.0.0.1:19526` 本地桥接从已加载的 Chrome 扩展（**Leo cookie.txt Locally**，版本 ≥ 1.3.15）静默同步；
+- **扩展安装与卡片交互**：若检测到扩展未安装或离线，AI 严禁私自弹窗，必须优先向聊天框推送**带选项的原生确认卡片**（宿主若有提问/选择工具则优先调用，降级则自适应输出 Markdown 预审卡片），提供“自动打开协助（推荐）”与“手动引导（仅获取路径）”两个选择。用户确认自动打开后执行 `node scripts/cli/index.mjs setup --open`；若选择手动则执行 `node scripts/cli/index.mjs setup`；
 - **平台支持范围**：服务云 (`cloud_token.json`)、Shipwright (`shipwright_cookie.json`)、FeCI (`feci_cookie.json`)、Apollo Portal (`test_apollo_cookie.json`)、Luke 权限 (`luke_cookie.json`)、UC 组织 (`test_uc_cookie.json`)、灯塔 ARMS (`arms_api_key.json` / `arms_cookie.json`)、ES 搜索云 (`search_cookie.json`)、白鸽网关 (`baige_cookie.json`)、Dinsight、FAST (`fast_cookie.json`)、ONES 研发管理 (`ones_cookie.json`)；
 - **独立中继工具**：可使用 `node scripts/credential_relay.js <targetUrl>` 单点测试与同步凭据（严禁调用任何外部自动化浏览器）。
 
