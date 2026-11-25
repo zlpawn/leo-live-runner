@@ -4,100 +4,517 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Leo Live Inspector 控制台</title>
+<script>
+  // 主题必须在首帧前落到 <html> 上，否则会先闪一下暗色再切亮色。
+  (function () {
+    try {
+      var q = (location.search.match(/[?&]theme=(light|dark)/) || [])[1];
+      var saved = localStorage.getItem('leo.theme');
+      var sysLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      var theme = q || (saved === 'light' || saved === 'dark' ? saved : (sysLight ? 'light' : 'dark'));
+      document.documentElement.setAttribute('data-theme', theme);
+      if (q) localStorage.setItem('leo.theme', q);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <style>
-  :root { --bg:#0e1116; --panel:#171b22; --panel2:#1e242d; --border:#2b333f; --fg:#e6edf3; --muted:#8b97a7; --accent:#3b82f6; --accent2:#2563eb; --ok:#22c55e; --err:#ef4444; --warn:#f59e0b; }
+  /* ============================================================
+     设计令牌 · 默认暗色（高性能玻璃拟态，零 backdrop-filter）
+     亮色主题通过 html[data-theme="light"] 覆盖同名变量
+     ============================================================ */
+  :root {
+    color-scheme: dark;
+    --grad-a:#0f172a; --grad-b:#1e293b;
+    --orb-1:#6366f1; --orb-2:#06b6d4; --orb-3:#ec4899;
+    --glass: rgba(255,255,255,.085);
+    --glass-2: rgba(255,255,255,.055);
+    --glass-strong: rgba(255,255,255,.13);
+    --glass-card: rgba(255,255,255,.075);
+    --glass-nav: #121a2b;
+    --nav-gap: #121a2b;
+    --glass-pop: rgba(24,33,52,.96);
+    --glass-border: rgba(255,255,255,.20);
+    --glass-border-soft: rgba(255,255,255,.10);
+    --glass-inset: inset 0 1px 0 rgba(255,255,255,.16);
+    --glass-hover-border: rgba(255,255,255,.34);
+    --fg:#e2e8f0; --fg-strong:#ffffff; --muted:#94a3b8;
+    --accent:#6366f1; --accent-2:#06b6d4; --accent-fg:#ffffff;
+    --ok:#22c55e; --err:#f43f5e; --warn:#f59e0b;
+    --ok-fg:#86efac; --err-fg:#fda4af; --warn-fg:#fcd34d;
+    --input-bg: rgba(255,255,255,.07);
+    --input-border: rgba(255,255,255,.16);
+    --code-bg: rgba(2,6,23,.55); --code-fg:#cbd5e1;
+    --shadow-card: 0 22px 50px -22px rgba(2,6,23,.75);
+    --glow: 0 26px 64px -28px rgba(99,102,241,.6);
+    --row-hover: rgba(255,255,255,.05);
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+    --grad-a:#eef2ff; --grad-b:#dbeafe;
+    --orb-1:#a5b4fc; --orb-2:#67e8f9; --orb-3:#f9a8d4;
+    --glass: rgba(255,255,255,.62);
+    --glass-2: rgba(255,255,255,.45);
+    --glass-strong: rgba(255,255,255,.78);
+    --glass-card: rgba(255,255,255,.72);
+    --glass-nav: #ffffff;
+    --nav-gap: #ffffff;
+    --glass-pop: rgba(255,255,255,.98);
+    --glass-border: rgba(255,255,255,.9);
+    --glass-border-soft: rgba(15,23,42,.09);
+    --glass-inset: inset 0 1px 0 rgba(255,255,255,.95);
+    --glass-hover-border: rgba(79,70,229,.32);
+    --fg:#1e293b; --fg-strong:#020617; --muted:#64748b;
+    --accent:#4f46e5; --accent-2:#0891b2; --accent-fg:#ffffff;
+    --ok:#15803d; --err:#be123c; --warn:#b45309;
+    --ok-fg:#166534; --err-fg:#9f1239; --warn-fg:#92400e;
+    --input-bg: rgba(255,255,255,.78);
+    --input-border: rgba(15,23,42,.13);
+    --code-bg: rgba(15,23,42,.05); --code-fg:#1e293b;
+    --shadow-card: 0 18px 42px -24px rgba(15,23,42,.35);
+    --glow: 0 26px 64px -30px rgba(79,70,229,.4);
+    --row-hover: rgba(15,23,42,.045);
+  }
+
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
-  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 70px; }
-  header { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
-  header h1 { font-size:19px; margin:0; font-weight:650; letter-spacing:.3px; }
-  .badge { font-size:11px; color:var(--warn); border:1px solid rgba(245,158,11,.4); background:rgba(245,158,11,.1); border-radius:20px; padding:2px 10px; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok); display:inline-block; }
-  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; position:sticky; top:0; z-index:20; background:var(--bg); }
-  .tabs button { padding:10px 18px; font-size:14px; color:var(--muted); background:transparent; border:none; border-radius:0; border-bottom:2px solid transparent; white-space:nowrap; }
-  .tabs button:hover { color:var(--fg); border-color:transparent; border-bottom-color:var(--border); }
-  .tabs button.active { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
+  html, body { min-height: 100%; }
+  body {
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    color: var(--fg);
+    background: linear-gradient(158deg, var(--grad-a), var(--grad-b));
+    -webkit-font-smoothing: antialiased;
+    transition: color .3s ease;
+  }
+
+  .bg-decor {
+    position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(99,102,241,.26), transparent 62%),
+      radial-gradient(900px 560px at 92% 6%, rgba(6,182,212,.20), transparent 60%);
+    contain: strict;
+    transform: translateZ(0);
+    transition: opacity .4s ease;
+  }
+  .orb { position:absolute; border-radius:50%; opacity:.55; }
+  html[data-theme="light"] .orb { opacity:.42; }
+  .orb.o1 {
+    width:820px; height:820px; top:-300px; left:-260px;
+    background: radial-gradient(circle, var(--orb-1) 0%, transparent 68%);
+  }
+  .orb.o2 {
+    width:720px; height:720px; top:2%; right:-280px;
+    background: radial-gradient(circle, var(--orb-2) 0%, transparent 66%);
+  }
+  .orb.o3 {
+    width:780px; height:780px; bottom:-340px; left:32%;
+    background: radial-gradient(circle, var(--orb-3) 0%, transparent 68%);
+  }
+  .wrap { position:relative; z-index:1; max-width:1240px; margin:0 auto; padding:30px 24px 90px; }
+
+  /* ---------------- 头部 ---------------- */
+  header { display:flex; align-items:center; gap:14px; margin-bottom:22px; flex-wrap:wrap; }
+  header h1 {
+    font-size:26px; margin:0; font-weight:800; letter-spacing:-.02em;
+    color: var(--fg-strong);
+    text-shadow: 0 2px 24px rgba(15,23,42,.35);
+  }
+  html[data-theme="light"] header h1 { text-shadow: 0 1px 14px rgba(255,255,255,.9); }
+  header h1 .accent-word {
+    background:linear-gradient(115deg, var(--accent) 10%, var(--accent-2) 90%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter: brightness(1.55) saturate(1.15);
+  }
+  html[data-theme="light"] header h1 .accent-word { filter:none; }
+  .grad {
+    background:linear-gradient(115deg, var(--accent) 5%, var(--accent-2) 95%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-weight:800;
+  }
+  .badge {
+    font-size:11.5px; font-weight:600; color:var(--warn-fg);
+    border:1px solid rgba(245,158,11,.38); background:rgba(245,158,11,.13);
+    border-radius:999px; padding:4px 12px;
+  }
+  .dot {
+    width:9px; height:9px; border-radius:50%; background:var(--ok);
+    box-shadow:0 0 0 3px rgba(34,197,94,.18), 0 0 14px var(--ok);
+    display:inline-block;
+  }
+
+  /* 主题切换 */
+  .theme-btn {
+    margin-left:auto; display:inline-flex; align-items:center; gap:8px;
+    padding:9px 16px; border-radius:999px;
+    background:var(--glass-strong); border:1px solid var(--glass-border);
+    color:var(--fg); font-size:13px; font-weight:600; cursor:pointer;
+    box-shadow:var(--glass-inset);
+    transition:transform .22s cubic-bezier(.22,1,.36,1), border-color .22s, background .3s;
+  }
+  .theme-btn:hover { border-color:var(--glass-hover-border); }
+  .theme-btn .ico { font-size:15px; line-height:1; }
+
+  /* ---------------- 顶部 Tab ---------------- */
+  .tabs {
+    display:flex; gap:5px; padding:6px;
+    border-radius:999px;
+    background:var(--glass-nav);
+    border:1px solid var(--glass-border);
+    box-shadow: var(--shadow-card), var(--glass-inset);
+    overflow-x:auto; position:sticky; top:14px; z-index:20;
+    margin-bottom:24px;
+    scrollbar-width:none;
+  }
+  .tabs::before {
+    content:''; position:absolute; left:0; right:0;
+    top:-15px; height:15px;
+    background:var(--nav-gap);
+    border-radius:14px 14px 0 0;
+    pointer-events:none;
+  }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tabs button {
+    padding:10px 20px; font-size:14px; font-weight:500;
+    color:var(--muted); background:transparent;
+    border:none; border-radius:999px; white-space:nowrap;
+    transition: color .2s ease, background .25s ease, box-shadow .25s ease, transform .2s ease;
+  }
+  .tabs button:hover { color:var(--fg); background:rgba(127,127,127,.12); }
+  .tabs button.active {
+    color:var(--accent-fg); font-weight:700;
+    background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow:0 10px 26px -12px var(--accent), inset 0 1px 0 rgba(255,255,255,.28);
+  }
+
+  /* ---------------- 卡片（玻璃） ---------------- */
   .page { display:none; }
   .page.active { display:block; }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px 18px 20px; margin-bottom:16px; }
-  .card h2 { font-size:15px; margin:0 0 14px; font-weight:650; }
-  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-  .split { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:16px; align-items:start; }
-  .field { display:flex; flex-direction:column; gap:6px; min-width:0; }
-  .field label { font-size:12px; color:var(--muted); letter-spacing:.4px; }
-  input, select, textarea { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--fg); font-size:14px; outline:none; font-family:inherit; }
-  input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+
+  .card, .homecard {
+    position:relative;
+    background:var(--glass-card);
+    border:1px solid var(--glass-border);
+    border-radius:18px;
+    box-shadow: var(--shadow-card), var(--glass-inset);
+    transition: border-color .25s ease, box-shadow .3s ease;
+  }
+  .card { padding:20px 20px 22px; margin-bottom:18px; }
+  .card:hover, .homecard:hover { border-color:var(--glass-hover-border); box-shadow: var(--glow), var(--glass-inset); }
+  .card h2 { font-size:16px; margin:0 0 15px; font-weight:750; color:var(--fg-strong); letter-spacing:-.01em; }
+  .homecard { padding:18px 20px 20px; display:flex; flex-direction:column; gap:9px; }
+  .homecard h3 { font-size:15px; margin:0; font-weight:750; color:var(--fg-strong); }
+  .homecard p { margin:0; font-size:12.5px; color:var(--muted); line-height:1.7; }
+  .homecard .kw { font-size:11px; color:var(--muted); opacity:.85; }
+  .homecard button { align-self:flex-start; margin-top:4px; }
+
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+  .split { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:18px; align-items:start; }
+
+  /* ---------------- 表单 ---------------- */
+  .field { display:flex; flex-direction:column; gap:7px; min-width:0; }
+  .field label { font-size:12px; font-weight:600; color:var(--muted); letter-spacing:.4px; }
+  input, select, textarea {
+    width:100%; padding:11px 13px; border-radius:11px;
+    border:1px solid var(--input-border);
+    background:var(--input-bg); color:var(--fg);
+    font-size:14px; outline:none; font-family:inherit;
+    transition:border-color .2s ease, box-shadow .2s ease, background .3s ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(99,102,241,.22);
+  }
   input[readonly] { color:var(--muted); }
-  textarea { resize:vertical; min-height:70px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; }
-  .row { display:flex; gap:8px; align-items:flex-end; }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(.65) brightness(1.4); opacity:.85; cursor:pointer;
+  }
+  html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: none; opacity:.65;
+  }
+  select option { background:var(--glass-strong); color:var(--fg); }
+  textarea { resize:vertical; min-height:70px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.55; }
+  .row { display:flex; gap:9px; align-items:flex-end; }
   .row > input { flex:1; }
+
+  /* ---------------- 下拉 ---------------- */
   .combo { position:relative; }
-  .combo-list { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); max-height:280px; overflow:auto; background:var(--panel2); border:1px solid var(--border); border-radius:8px; box-shadow:0 14px 34px rgba(0,0,0,.5); }
-  .combo-item { padding:8px 12px; font-size:13.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .combo-item:hover, .combo-item.active { background:var(--accent); color:#fff; }
-  .combo-empty { padding:10px 12px; color:var(--muted); font-size:13px; }
-  button { padding:9px 15px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--fg); font-size:14px; cursor:pointer; white-space:nowrap; font-family:inherit; }
-  button:hover { border-color:var(--accent); }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button.primary { background:linear-gradient(180deg,var(--accent),var(--accent2)); border:none; font-weight:600; padding:11px 24px; font-size:15px; }
-  button.danger { background:linear-gradient(180deg,#dc2626,#b91c1c); border:none; font-weight:600; }
-  button.ghost { background:transparent; }
-  button.sm { padding:5px 10px; font-size:12.5px; }
-  .hint { font-size:12px; color:var(--muted); margin-top:8px; line-height:1.6; }
-  .actions { display:flex; align-items:center; gap:14px; margin-top:14px; flex-wrap:wrap; }
-  .status { font-size:13px; }
-  .status.running { color:var(--warn); }
-  .status.success { color:var(--ok); }
-  .status.error { color:var(--err); }
-  pre.out { margin:0; padding:14px; height:340px; overflow:auto; background:#0a0d12; border:1px solid var(--border); border-radius:10px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; color:#c9d4e0; }
+  .combo-list {
+    position:absolute; z-index:30; left:0; right:0; top:calc(100% + 6px);
+    max-height:290px; overflow:auto;
+    background:var(--glass-pop);
+    border:1px solid var(--glass-border); border-radius:13px;
+    box-shadow:0 24px 60px -18px rgba(2,6,23,.62), var(--glass-inset);
+  }
+  .combo-item { padding:9px 13px; font-size:13.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .combo-item:hover, .combo-item.active { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:var(--accent-fg); }
+  .combo-empty { padding:11px 13px; color:var(--muted); font-size:13px; }
+
+  /* ---------------- 按钮 ---------------- */
+  button {
+    padding:9px 16px; border-radius:11px;
+    border:1px solid var(--glass-border-soft);
+    background:var(--glass-2); color:var(--fg);
+    font-size:14px; cursor:pointer; white-space:nowrap; font-family:inherit;
+    transition:border-color .2s ease, background .2s ease, transform .18s ease, box-shadow .22s ease;
+  }
+  button:hover { border-color:var(--glass-hover-border); background:var(--glass); }
+  button:active { transform:translateY(1px); }
+  button:disabled { opacity:.42; cursor:not-allowed; transform:none; }
+  button.primary {
+    background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    border:none; color:var(--accent-fg); font-weight:700;
+    padding:11px 26px; font-size:15px;
+    box-shadow:0 14px 32px -14px var(--accent), inset 0 1px 0 rgba(255,255,255,.3);
+  }
+  button.primary:hover { filter:brightness(1.06); box-shadow:0 18px 40px -14px var(--accent), inset 0 1px 0 rgba(255,255,255,.32); }
+  button.danger {
+    background:linear-gradient(135deg,#f43f5e,#be123c);
+    border:none; color:#fff; font-weight:700;
+    box-shadow:0 14px 32px -14px rgba(244,63,94,.7);
+  }
+  button.ghost { background:transparent; border-color:var(--glass-border-soft); }
+  button.ghost:hover { background:var(--glass); }
+  button.sm { padding:5px 11px; font-size:12.5px; border-radius:9px; }
+
+  .hint { font-size:12px; color:var(--muted); margin-top:9px; line-height:1.7; }
+  .actions { display:flex; align-items:center; gap:12px; margin-top:15px; flex-wrap:wrap; }
+  .status { font-size:13px; font-weight:600; }
+  .status.running { color:var(--warn-fg); }
+  .status.success { color:var(--ok-fg); }
+  .status.error { color:var(--err-fg); }
+
+  pre.out {
+    margin:0; padding:15px; height:340px; overflow:auto;
+    background:var(--code-bg); border:1px solid var(--glass-border-soft);
+    border-radius:13px; color:var(--code-fg);
+    font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px; line-height:1.6;
+    white-space:pre-wrap; word-break:break-word;
+  }
   pre#log { height:400px; }
   .muted { color:var(--muted); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { text-align:left; padding:8px 10px; color:var(--muted); font-weight:500; border-bottom:1px solid var(--border); white-space:nowrap; font-size:12px; }
-  td { padding:8px 10px; border-bottom:1px solid rgba(43,51,63,.55); vertical-align:top; word-break:break-word; }
-  tr:hover td { background:rgba(255,255,255,.02); }
+
+  /* ---------------- 表格 ---------------- */
+  table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  th {
+    text-align:left; padding:9px 11px; color:var(--muted);
+    font-weight:600; font-size:12px; white-space:nowrap;
+    border-bottom:1px solid var(--glass-border-soft);
+  }
+  td { padding:9px 11px; border-bottom:1px solid var(--glass-border-soft); vertical-align:top; word-break:break-word; }
+  td .nowrap, td.nowrap { white-space:nowrap; }
+  .range-cell { white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr:hover td { background:var(--row-hover); }
   .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12px; }
   table.cred { table-layout:fixed; }
   table.cred td, table.cred th { word-break:break-word; }
   .cred-ops { display:flex; gap:6px; flex-wrap:wrap; }
   .cred-line { margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:help; }
-  .cred-line b { color:var(--fg); font-weight:600; }
-  .tag { display:inline-block; font-size:11px; padding:1px 8px; border-radius:20px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
-  .tag.ok { color:var(--ok); border-color:rgba(34,197,94,.4); }
-  .tag.err { color:var(--err); border-color:rgba(239,68,68,.4); }
-  .tag.warn { color:var(--warn); border-color:rgba(245,158,11,.4); }
-  .joblist { display:flex; flex-direction:column; gap:8px; max-height:520px; overflow:auto; }
-  .jobitem { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; background:var(--panel2); }
-  .jobitem:hover { border-color:var(--accent); }
-  .jobitem.sel { border-color:var(--accent); background:rgba(59,130,246,.1); }
+  .cred-line b { color:var(--fg-strong); font-weight:600; }
+
+  .tag {
+    display:inline-block; font-size:11px; font-weight:600; padding:2px 9px;
+    border-radius:999px; border:1px solid var(--glass-border-soft);
+    color:var(--muted); white-space:nowrap;
+  }
+  .tag.ok { color:var(--ok-fg); border-color:rgba(34,197,94,.42); background:rgba(34,197,94,.1); }
+  .tag.err { color:var(--err-fg); border-color:rgba(244,63,94,.42); background:rgba(244,63,94,.1); }
+  .tag.warn { color:var(--warn-fg); border-color:rgba(245,158,11,.42); background:rgba(245,158,11,.1); }
+
+  /* ---------------- 任务列表 ---------------- */
+  .joblist { display:flex; flex-direction:column; gap:9px; max-height:520px; overflow:auto; }
+  .jobitem {
+    border:1px solid var(--glass-border-soft); border-radius:12px;
+    padding:10px 12px; cursor:pointer; background:var(--glass-2);
+    transition:border-color .2s, background .25s;
+  }
+  .jobitem:hover { border-color:var(--glass-hover-border); }
+  .jobitem.sel { border-color:var(--accent); background:rgba(99,102,241,.15); }
   .jobitem .t1 { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .jobitem .t2 { font-size:11px; color:var(--muted); margin-top:4px; }
-  .homecard { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:8px; }
-  .homecard h3 { font-size:14px; margin:0; font-weight:650; }
-  .homecard p { margin:0; font-size:12.5px; color:var(--muted); line-height:1.65; }
-  .homecard .kw { font-size:11px; color:var(--muted); }
-  .homecard button { align-self:flex-start; margin-top:4px; }
-  .subtabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
-  .subtabs button.on { border-color:var(--accent); color:#fff; background:rgba(59,130,246,.18); }
-  .warnbox { border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.08); border-radius:9px; padding:11px 13px; font-size:12.5px; color:#fca5a5; line-height:1.6; margin-bottom:16px; }
-  .okbox { border:1px solid rgba(34,197,94,.35); background:rgba(34,197,94,.07); border-radius:9px; padding:11px 13px; font-size:12.5px; color:#86efac; line-height:1.6; }
-  .toast { position:fixed; right:20px; bottom:20px; background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 16px; font-size:13px; box-shadow:0 14px 40px rgba(0,0,0,.5); opacity:0; transform:translateY(8px); transition:.2s; pointer-events:none; max-width:420px; z-index:100; }
+  .jobitem .t2 { font-size:11px; color:var(--muted); margin-top:5px; }
+
+  /* ---------------- 子 Tab ---------------- */
+  .subtabs { display:flex; gap:7px; margin-bottom:18px; flex-wrap:wrap; }
+  .subtabs button { border-radius:999px; padding:7px 16px; font-size:13px; }
+  .subtabs button.on {
+    border-color:transparent; color:var(--accent-fg); font-weight:650;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    box-shadow:0 8px 20px -12px var(--accent);
+  }
+
+  /* ---------------- 提示框 ---------------- */
+  .warnbox {
+    border:1px solid rgba(244,63,94,.4); background:rgba(244,63,94,.11);
+    border-radius:13px; padding:12px 15px; font-size:12.5px;
+    color:var(--err-fg); line-height:1.7; margin-bottom:18px;
+  }
+  .infobox {
+    border:1px solid rgba(99,102,241,.4); background:rgba(99,102,241,.12);
+    border-radius:13px; padding:12px 15px; font-size:12.5px;
+    color:var(--fg); line-height:1.7; margin-bottom:18px;
+  }
+  html[data-theme="light"] .infobox { color:#312e81; background:rgba(99,102,241,.1); }
+  .okbox {
+    border:1px solid rgba(34,197,94,.36); background:rgba(34,197,94,.1);
+    border-radius:13px; padding:12px 15px; font-size:12.5px;
+    color:var(--ok-fg); line-height:1.7;
+  }
+
+  /* ---------------- Toast ---------------- */
+  .toast {
+    position:fixed; right:22px; bottom:22px;
+    background:var(--glass-pop); border:1px solid var(--glass-border);
+    border-radius:14px; padding:13px 18px; font-size:13px;
+    box-shadow:0 26px 60px -20px rgba(2,6,23,.7), var(--glass-inset);
+    opacity:0; transform:translateY(10px) scale(.98);
+    transition:opacity .26s ease, transform .26s cubic-bezier(.22,1,.36,1);
+    pointer-events:none; max-width:430px; z-index:100;
+  }
   .toast.show { opacity:1; transform:none; }
-  .toast.err { border-color:rgba(239,68,68,.5); color:#fca5a5; }
-  .toast.ok { border-color:rgba(34,197,94,.5); color:#86efac; }
-  @media (max-width:860px) { .grid, .split { grid-template-columns:1fr; } }
+  .toast.err { border-color:rgba(244,63,94,.5); color:var(--err-fg); }
+  .toast.ok { border-color:rgba(34,197,94,.5); color:var(--ok-fg); }
+
+  /* ---------------- 入场动画 ---------------- */
+  @keyframes fadeInUp {
+    from { opacity:0; transform:translateY(16px); }
+    to   { opacity:1; transform:none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .page.active { animation: fadeInUp .5s cubic-bezier(.22,1,.36,1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  }
+
+  /* ---------------- 工时概览日历 ---------------- */
+  .mh-cal {
+    display:grid; grid-template-columns:repeat(7,minmax(0,1fr));
+    gap:7px; margin-top:16px;
+  }
+  .mh-wd {
+    text-align:center; font-size:11.5px; font-weight:650;
+    color:var(--muted); padding-bottom:2px; letter-spacing:.06em;
+  }
+  .mh-cell {
+    position:relative; min-height:62px; border-radius:11px;
+    border:1px solid var(--glass-border-soft);
+    background:var(--glass-2);
+    padding:6px 8px; display:flex; flex-direction:column; gap:2px;
+    font-variant-numeric:tabular-nums;
+  }
+  .mh-blank { background:transparent; border-color:transparent; }
+  .mh-num { font-size:11px; color:var(--muted); font-weight:600; }
+  .mh-h { font-size:14px; font-weight:750; color:var(--fg-strong); line-height:1.2; }
+  .mh-ico { position:absolute; right:6px; bottom:4px; font-size:11px; opacity:.85; }
+
+  .mh-full { border-color:rgba(34,197,94,.42); background:rgba(34,197,94,.12); }
+  .mh-full .mh-h { color:var(--ok-fg); }
+  .mh-short { border-color:rgba(245,158,11,.46); background:rgba(245,158,11,.13); }
+  .mh-short .mh-h { color:var(--warn-fg); }
+  .mh-missing, .mh-over { border-color:rgba(244,63,94,.46); background:rgba(244,63,94,.12); }
+  .mh-missing .mh-h, .mh-over .mh-h { color:var(--err-fg); }
+  .mh-off { opacity:.42; }
+  .mh-overtime { border-color:rgba(6,182,212,.4); background:rgba(6,182,212,.12); }
+  .mh-pending { opacity:.55; border-style:dashed; }
+  .mh-today { box-shadow:0 0 0 2px var(--accent), 0 8px 22px -14px var(--accent); }
+
+  .mh-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:16px; }
+  .mh-stat {
+    border-radius:13px; padding:12px 14px;
+    border:1px solid var(--glass-border-soft);
+    background:var(--glass-2);
+  }
+  .mh-stat-label { font-size:11.5px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
+  .mh-stat-value {
+    margin-top:5px; font-size:24px; font-weight:800; letter-spacing:-.02em;
+    color:var(--fg-strong); font-variant-numeric:tabular-nums;
+  }
+  .mh-stat-unit { font-size:12px; font-weight:600; color:var(--muted); margin-left:4px; }
+  .mh-stat-ok .mh-stat-value { color:var(--ok-fg); }
+  .mh-stat-warn .mh-stat-value { color:var(--warn-fg); }
+  .mh-stat-err .mh-stat-value { color:var(--err-fg); }
+
+  @media (max-width:760px) {
+    .mh-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .mh-cell { min-height:54px; }
+    .mh-h { font-size:12.5px; }
+  }
+
+  /* ---------------- 首页 · 近三周工时 ---------------- */
+  .hmh-weeks {
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:14px; margin-top:14px;
+  }
+  .hmh-week {
+    border:1px solid var(--glass-border-soft); border-radius:13px;
+    background:var(--glass-2); padding:11px 12px 12px;
+  }
+  .hmh-head {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    font-size:12.5px; color:var(--fg); margin-bottom:9px;
+  }
+  .hmh-count { margin-left:auto; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .mh-badge {
+    font-size:11px; font-weight:650; padding:2px 8px; border-radius:999px;
+    white-space:nowrap;
+  }
+  .mh-badge-ok { color:var(--ok-fg); background:rgba(34,197,94,.16); border:1px solid rgba(34,197,94,.34); }
+  .mh-badge-warn { color:var(--warn-fg); background:rgba(245,158,11,.16); border:1px solid rgba(245,158,11,.34); }
+  .mh-badge-err { color:var(--err-fg); background:rgba(244,63,94,.16); border:1px solid rgba(244,63,94,.34); }
+  .mh-badge-idle { color:var(--muted); background:var(--glass-2); border:1px solid var(--glass-border-soft); }
+
+  .hmh-grid {
+    display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px;
+  }
+  .hmh-wd { text-align:center; font-size:10.5px; color:var(--muted); font-weight:650; padding-bottom:2px; }
+  .hmh-cell {
+    min-height:44px; border-radius:8px; padding:4px 5px;
+    border:1px solid var(--glass-border-soft); background:var(--glass-2);
+    display:flex; flex-direction:column; gap:1px;
+    font-variant-numeric:tabular-nums;
+  }
+  .hmh-blank { background:transparent; border-color:transparent; }
+  .hmh-num { font-size:9.5px; color:var(--muted); font-weight:600; line-height:1.2; }
+  .hmh-h { font-size:12.5px; font-weight:750; color:var(--fg-strong); line-height:1.2; }
+
+  .mh-legend { display:inline-flex; align-items:center; gap:4px; margin-left:10px; white-space:nowrap; }
+  .mh-dot { width:9px; height:9px; border-radius:3px; border:1px solid var(--glass-border-soft); display:inline-block; }
+  .mh-dot.mh-full { background:rgba(34,197,94,.35); border-color:rgba(34,197,94,.5); }
+  .mh-dot.mh-short { background:rgba(245,158,11,.35); border-color:rgba(245,158,11,.5); }
+  .mh-dot.mh-missing, .mh-dot.mh-over { background:rgba(244,63,94,.32); border-color:rgba(244,63,94,.5); }
+  .mh-dot.mh-off { background:var(--glass-2); opacity:.5; }
+  .mh-dot.mh-pending { background:var(--glass-2); border-style:dashed; opacity:.6; }
+
+  @media (max-width:900px) {
+    .hmh-weeks { grid-template-columns:1fr; }
+    .hmh-cell { min-height:40px; }
+    .grid, .split { grid-template-columns:1fr; }
+    .wrap { padding:22px 16px 70px; }
+    header h1 { font-size:21px; }
+    .theme-btn { margin-left:0; }
+  }
 </style>
 </head>
 <body>
+<div class="bg-decor" aria-hidden="true">
+  <span class="orb o1"></span>
+  <span class="orb o2"></span>
+  <span class="orb o3"></span>
+</div>
 <div class="wrap">
   <header>
     <span class="dot" id="liveDot"></span>
-    <h1>Leo Live Inspector · 测试环境控制台</h1>
+    <h1><span class="accent-word">Leo Live Inspector</span> · 测试环境控制台</h1>
     <span class="badge">仅测试环境 · 生产只读</span>
+    <button class="theme-btn" id="themeToggle" type="button" title="切换亮色 / 暗色主题">
+      <span class="ico" id="themeIcon">🌙</span><span id="themeLabel">暗色</span>
+    </button>
   </header>
 
   <nav class="tabs" id="tabs" role="tablist">
     <button role="tab" class="active" data-tab="home" aria-selected="true">首页</button>
+    <button role="tab" data-tab="ones" aria-selected="false">ONES 研发</button>
     <button role="tab" data-tab="deploy" aria-selected="false">部署</button>
     <button role="tab" data-tab="logs" aria-selected="false">日志检索</button>
     <button role="tab" data-tab="apollo" aria-selected="false">Apollo 配置</button>
@@ -107,6 +524,24 @@
 
   <!-- ============================ 首页 ============================ -->
   <section class="page active" id="page-home">
+    <div class="card" id="homeManhour">
+      <h2 style="display:flex;align-items:center;gap:10px">
+        工时概览 · 近三周
+        <span class="status" id="homeMhStatus" style="font-weight:500">就绪</span>
+        <button class="ghost" data-goto="ones" style="margin-left:auto;padding:5px 12px;font-size:12px">查看 / 按日期查 →</button>
+      </h2>
+      <div class="hint" style="margin:0 0 4px">
+        固定显示上周、本周、下周，只读不可改日期。每个工作日应正好 1 人天；
+        <span class="mh-legend"><i class="mh-dot mh-full"></i>打满</span>
+        <span class="mh-legend"><i class="mh-dot mh-short"></i>不足</span>
+        <span class="mh-legend"><i class="mh-dot mh-missing"></i>未打</span>
+        <span class="mh-legend"><i class="mh-dot mh-over"></i>超出</span>
+        <span class="mh-legend"><i class="mh-dot mh-off"></i>假</span>
+        <span class="mh-legend"><i class="mh-dot mh-pending"></i>待打</span>
+      </div>
+      <div id="homeMhBody"><div class="combo-empty">加载中…</div></div>
+    </div>
+
     <div class="card">
       <h2>这个控制台能做什么</h2>
       <p class="hint" style="margin-top:0">
@@ -195,7 +630,7 @@
             </div>
             <div class="field">
               <label>冲突处理策略</label>
-              <div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+              <div class="hint" style="border:1px solid var(--glass-border-soft);border-radius:11px;padding:10px 12px">
                 严格失败：出现冲突立即中止并列出冲突文件，不自动改代码、不推送、不部署。
               </div>
             </div>
@@ -356,6 +791,232 @@
     <div class="card">
       <h2 id="apResultTitle">结果</h2>
       <div id="apResult"><div class="combo-empty">尚未查询</div></div>
+    </div>
+  </section>
+
+  <!-- ============================ ONES 研发 ============================ -->
+  <section class="page" id="page-ones">
+    <div class="infobox">
+      ℹ️ <b>ONES 是协作系统，不受「生产只读」约束</b>。查询直接返回；新建需求 / 缺陷、改排期属于真实研发数据，
+      必须先在「写入」子页预检看到 Diff，再点「确认提交」。
+    </div>
+
+    <div class="subtabs" id="onesTabs">
+      <button class="on" data-o="manhour">工时概览</button>
+      <button data-o="schedule">我的排期</button>
+      <button data-o="req">需求详情</button>
+      <button data-o="reqs">需求检索</button>
+      <button data-o="bugs">缺陷检索</button>
+      <button data-o="meta">迭代 / 项目</button>
+      <button data-o="write">写入</button>
+    </div>
+
+    <div class="card osec" id="o-manhour">
+      <div class="grid">
+        <div class="field">
+          <label>起始日期</label>
+          <input id="oMhFrom" type="date" />
+        </div>
+        <div class="field">
+          <label>结束日期</label>
+          <input id="oMhTo" type="date" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oMhQuery">查询工时</button>
+        <span style="width:12px"></span>
+        <button class="ghost" id="oMhThisWeek" data-mh-preset="thisweek">本周</button>
+        <button class="ghost" id="oMhThisMonth" data-mh-preset="thismonth">本月</button>
+        <button class="ghost" id="oMhLastMonth" data-mh-preset="lastmonth">上一月</button>
+        <span class="status" id="oMhStatus">就绪</span>
+      </div>
+      <div class="hint">
+        每个工作日应当正好打满 <b>1 人天</b>。绿色=已打满，黄色=不足，红色=未打 / 超出，灰色=非工作日（法定节假日与调休由 ONES 判定）。
+        未来日期不参与统计，只显示「待打」。
+      </div>
+      <div id="oMhResult"><div class="combo-empty">尚未查询</div></div>
+    </div>
+
+    <div class="card osec" id="o-schedule" style="display:none">
+      <div class="grid">
+        <div class="field">
+          <label>起始日期</label>
+          <input id="oSchedFrom" type="date" />
+        </div>
+        <div class="field">
+          <label>结束日期</label>
+          <input id="oSchedTo" type="date" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oSchedQuery">查询排期</button>
+        <button class="ghost" id="oSchedPrev">上一周</button>
+        <button class="ghost" id="oSchedNext">下一周</button>
+        <span style="width:12px"></span>
+        <button class="ghost" id="oSchedThisWeek" data-preset="thisweek">本周</button>
+        <button class="ghost" id="oSchedThisMonth" data-preset="thismonth">本月</button>
+        <button class="ghost" id="oSchedLastMonth" data-preset="lastmonth">上一月</button>
+        <button class="ghost" id="oSchedTwoWeek" data-preset="twoweek">上周一 ~ 本周日</button>
+        <button class="ghost" id="oSchedWeekAhead" data-preset="weekahead">本周一 ~ 下周五</button>
+        <span class="status" id="oSchedStatus">就绪</span>
+      </div>
+      <div class="hint">按时间窗过滤估时条目，并按需求聚合交付窗口与总人天。只能查当前登录人（ONES 服务端限制）。快捷区间会直接带上查询，也可以自己改日期后点「查询排期」。</div>
+    </div>
+
+    <div class="card osec" id="o-req" style="display:none">
+      <div class="grid">
+        <div class="field" style="grid-column:1/-1">
+          <label>需求 ID 或标题关键词</label>
+          <input id="oReqKey" placeholder="如 50564297 / 钥匙箱" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oReqQuery">查询需求</button>
+        <span class="status" id="oReqStatus">就绪</span>
+      </div>
+      <div class="hint">状态、优先级、PM、迭代、层级、排期、全员估时、关联缺陷、可流转事件。</div>
+    </div>
+
+    <div class="card osec" id="o-reqs" style="display:none">
+      <div class="grid">
+        <div class="field"><label>迭代（ID 或标题，可空）</label><input id="oReqsSprint" placeholder="如 IoT-2026-11-24" /></div>
+        <div class="field"><label>PM 账号（可空）</label><input id="oReqsPm" placeholder="如 sunzehao003" /></div>
+        <div class="field"><label>标题关键词（可空）</label><input id="oReqsTitle" placeholder="如 钥匙箱" /></div>
+        <div class="field"><label>层级（可空）</label><input id="oReqsLevel" placeholder="方向/业务线/系统/子系统" /></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oReqsQuery">查询需求列表</button>
+        <span class="status" id="oReqsStatus">就绪</span>
+      </div>
+      <div class="hint">不传过滤条件会返回全库 44 万+ 条，至少填一项。</div>
+    </div>
+
+    <div class="card osec" id="o-bugs" style="display:none">
+      <div class="grid">
+        <div class="field"><label>缺陷 ID（可空）</label><input id="oBugsId" placeholder="如 10413977" /></div>
+        <div class="field"><label>处理人（姓名 / 账号，可空）</label><input id="oBugsResolver" placeholder="如 孙泽浩" /></div>
+        <div class="field"><label>标题关键词（可空）</label><input id="oBugsSummary" placeholder="如 钥匙" /></div>
+        <div class="field"><label>关联需求 ID（可空）</label><input id="oBugsReq" placeholder="如 50564297" /></div>
+        <div class="field"><label>条数</label><input id="oBugsLimit" value="10" /></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oBugsQuery">查询缺陷</button>
+        <span class="status" id="oBugsStatus">就绪</span>
+      </div>
+    </div>
+
+    <div class="card osec" id="o-meta" style="display:none">
+      <div class="grid">
+        <div class="field"><label>迭代关键词（可空）</label><input id="oMetaIter" placeholder="如 IoT-2026-11" /></div>
+        <div class="field"><label>项目关键词（可空）</label><input id="oMetaProj" placeholder="如 惠居" /></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="oMetaQuery">查询迭代 / 项目</button>
+        <span class="status" id="oMetaStatus">就绪</span>
+      </div>
+    </div>
+
+    <div class="card osec" id="o-write" style="display:none">
+      <div class="hint" style="color:var(--warn-fg);margin-top:0">
+        ⚠️ ONES 没有测试环境，这里的写入直接作用于<b>真实研发数据</b>。两步走：预检只算 Diff 不落库 → 确认提交才写入。
+      </div>
+      <div class="subtabs" id="onesWriteTabs">
+        <button class="on" data-ow="req">新建需求</button>
+        <button data-ow="bug">新建缺陷</button>
+        <button data-ow="sched">调整排期</button>
+        <button data-ow="move">移入迭代</button>
+        <button data-ow="adv">状态流转</button>
+      </div>
+
+      <div class="card wsec2" id="ow-req" style="margin-bottom:0;padding:0;border:none;background:transparent">
+        <div class="grid">
+          <div class="field" style="grid-column:1/-1"><label>需求标题</label><input id="owReqTitle" placeholder="如 【钥匙箱三期】扫码开门" /></div>
+          <div class="field"><label>层级</label><input id="owReqLevel" value="惠居技术中心/惠居B端/惠居IoT/IoT系统" /></div>
+          <div class="field"><label>关联项目</label><input id="owReqProject" placeholder="如 惠居IoT项目" /></div>
+          <div class="field"><label>产品经理</label><input id="owReqPm" placeholder="姓名或账号，如 孙泽浩" /></div>
+          <div class="field"><label>迭代（可空）</label><input id="owReqSprint" placeholder="如 IoT-2026-11-24" /></div>
+          <div class="field"><label>优先级</label><select id="owReqPriority"><option>P2</option><option>P1</option><option>P0</option></select></div>
+          <div class="field"><label>需求类型</label><select id="owReqType"><option>产品需求</option><option>技术需求</option><option>埋点类需求</option><option>事务型需求</option><option>线上问题</option></select></div>
+          <div class="field" style="grid-column:1/-1"><label>描述（可空）</label><textarea id="owReqDesc" placeholder="需求背景与目标"></textarea></div>
+          <div class="field" style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px">
+            <input type="checkbox" id="owReqSafety" checked style="width:auto" />
+            <label style="margin:0">声明不涉及安全风险业务功能（新建需求的必填项）</label>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="owReqPre">预检（不写入）</button>
+          <button class="danger" id="owReqCommit" disabled>确认创建</button>
+          <span class="status" id="owReqStatus">就绪</span>
+        </div>
+      </div>
+
+      <div class="card wsec2" id="ow-bug" style="display:none;margin-bottom:0;padding:0;border:none;background:transparent">
+        <div class="grid">
+          <div class="field" style="grid-column:1/-1"><label>缺陷标题</label><input id="owBugSummary" placeholder="如 OTA 升级后设备离线" /></div>
+          <div class="field"><label>处理人</label><input id="owBugResolver" placeholder="姓名或账号，如 孙泽浩" /></div>
+          <div class="field"><label>关联需求 ID（可空）</label><input id="owBugReq" placeholder="如 50564297" /></div>
+          <div class="field"><label>优先级</label><select id="owBugPriority"><option>P2</option><option>P1</option><option>P0</option></select></div>
+          <div class="field"><label>缺陷类型</label><select id="owBugType"><option>测试阶段</option><option>开发阶段</option><option>产品阶段</option><option>showcase阶段</option><option>用户验收阶段（UAT)</option></select></div>
+          <div class="field"><label>发现方式</label><select id="owBugFindWay"><option>手工测试</option><option>自动化测试</option><option>CR</option><option>监控报警</option><option>流量回放</option></select></div>
+          <div class="field"><label>工时（天，可空）</label><input id="owBugHours" placeholder="如 0.2" /></div>
+          <div class="field"><label>层级（可空，若填关联需求将自动继承需求层级）</label><input id="owBugLevel" placeholder="方向/业务线/系统/子系统" /></div>
+          <div class="field" style="grid-column:1/-1"><label>描述（可空）</label><textarea id="owBugDesc" placeholder="复现步骤 / 期望结果"></textarea></div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="owBugPre">预检（不写入）</button>
+          <button class="danger" id="owBugCommit" disabled>确认创建</button>
+          <span class="status" id="owBugStatus">就绪</span>
+        </div>
+      </div>
+
+      <div class="card wsec2" id="ow-sched" style="display:none;margin-bottom:0;padding:0;border:none;background:transparent">
+        <div class="grid">
+          <div class="field"><label>需求 ID</label><input id="owSchedId" placeholder="如 50564297" /></div>
+          <div class="field"><label>计划上线</label><input id="owSchedOnline" placeholder="2026-12-20 23:59:59" /></div>
+          <div class="field"><label>开发开始</label><input id="owSchedDevStart" placeholder="2026-12-01" /></div>
+          <div class="field"><label>开发结束</label><input id="owSchedDevEnd" placeholder="2026-12-05" /></div>
+          <div class="field"><label>测试开始</label><input id="owSchedTestStart" placeholder="2026-12-08" /></div>
+          <div class="field"><label>测试结束</label><input id="owSchedTestEnd" placeholder="2026-12-12" /></div>
+          <div class="field"><label>计划提测</label><input id="owSchedSubmitTest" placeholder="2026-12-06 23:59:59" /></div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="owSchedPre">预检（Diff）</button>
+          <button class="danger" id="owSchedCommit" disabled>确认提交</button>
+          <span class="status" id="owSchedStatus">就绪</span>
+        </div>
+      </div>
+
+      <div class="card wsec2" id="ow-move" style="display:none;margin-bottom:0;padding:0;border:none;background:transparent">
+        <div class="grid">
+          <div class="field"><label>需求 ID（多个用逗号分隔）</label><input id="owMoveIds" placeholder="如 50564297,50566423" /></div>
+          <div class="field"><label>目标迭代</label><input id="owMoveSprint" placeholder="如 IoT-2026-11-24" /></div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="owMovePre">预检</button>
+          <button class="danger" id="owMoveCommit" disabled>确认迁移</button>
+          <span class="status" id="owMoveStatus">就绪</span>
+        </div>
+      </div>
+
+      <div class="card wsec2" id="ow-adv" style="display:none;margin-bottom:0;padding:0;border:none;background:transparent">
+        <div class="grid">
+          <div class="field"><label>对象类型</label><select id="owAdvKind"><option value="requirement">需求</option><option value="bug">缺陷</option></select></div>
+          <div class="field"><label>ID</label><input id="owAdvId" placeholder="如 50565445" /></div>
+          <div class="field"><label>流转事件</label><input id="owAdvEvent" placeholder="如 评审 / 提测 / 已处理 / 关闭 / 删除" /></div>
+        </div>
+        <div class="hint">可用事件取决于对象当前状态，预检时会列出来。删除 / 取消标红为高危，需额外确认。</div>
+        <div class="actions">
+          <button class="ghost" id="owAdvPre">预检</button>
+          <button class="danger" id="owAdvCommit" disabled>确认流转</button>
+          <span class="status" id="owAdvStatus">就绪</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="oSharedResult" style="display:none">
+      <h2 id="oResultTitle">结果</h2>
+      <div id="oResult"><div class="combo-empty">尚未查询</div></div>
+      <pre class="out" id="oRaw" style="display:none"></pre>
     </div>
   </section>
 
@@ -541,6 +1202,37 @@ let lastJobId = null;
 const $ = id => document.getElementById(id);
 const modeLabel = { merge_deploy:'合并并部署', merge_only:'仅合并', deploy_dev:'直接部署开发分支', build_deploy:'仅构建部署', build_only:'仅构建', preview:'仅预演合并' };
 
+// ---------------------------------------------------------------- theme ----
+const THEME_META = {
+  dark:  { icon: '🌙', label: '暗色' },
+  light: { icon: '☀️', label: '亮色' }
+};
+
+function applyTheme(theme, { persist = true } = {}) {
+  const t = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  const meta = THEME_META[t];
+  const icon = $('themeIcon'), label = $('themeLabel'), btn = $('themeToggle');
+  if (icon) icon.textContent = meta.icon;
+  if (label) label.textContent = meta.label;
+  if (btn) btn.setAttribute('aria-label', '当前' + meta.label + '主题，点击切换');
+  if (persist) {
+    try { localStorage.setItem('leo.theme', t); } catch (e) {}
+  }
+}
+
+function initTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  applyTheme(current, { persist: false });
+  const btn = $('themeToggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const now = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      applyTheme(now === 'light' ? 'dark' : 'light');
+    });
+  }
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -573,7 +1265,7 @@ function post(url, body) {
 }
 
 // ---------------------------------------------------------------- tabs ----
-const TABS = ['home', 'deploy', 'logs', 'apollo', 'write', 'credentials'];
+const TABS = ['home', 'ones', 'deploy', 'logs', 'apollo', 'write', 'credentials'];
 
 function showTab(name) {
   if (!TABS.includes(name)) name = 'home';
@@ -597,6 +1289,8 @@ function showTab(name) {
     }, 30);
   }
   if (name === 'credentials') loadCredentials();
+  if (name === 'ones') onesOnEnter();
+  if (name === 'home') homeMhRefresh();
 }
 $('tabs').addEventListener('click', e => {
   const b = e.target.closest('button[data-tab]');
@@ -1407,6 +2101,737 @@ $('wDbCommit').addEventListener('click', async () => {
   }
 });
 
+// ================================================================== ONES ====
+let onesEntered = false;
+let onesSchedLoaded = null;
+let onesSchedInFlight = false;
+
+function onesDate(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function onesMondayOf(d = new Date()) {
+  const dow = (d.getDay() + 6) % 7;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+}
+
+function onesAddDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+function onesWeekRange(offsetWeeks) {
+  const monday = onesAddDays(onesMondayOf(), offsetWeeks * 7);
+  return { from: onesDate(monday), to: onesDate(onesAddDays(monday, 6)) };
+}
+
+function onesMonthRange(offsetMonths) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  return { from: onesDate(first), to: onesDate(last) };
+}
+
+const ONES_SCHED_PRESETS = {
+  thisweek: () => onesWeekRange(0),
+  thismonth: () => onesMonthRange(0),
+  lastmonth: () => onesMonthRange(-1),
+  twoweek: () => {
+    const monday = onesMondayOf();
+    return { from: onesDate(onesAddDays(monday, -7)), to: onesDate(onesAddDays(monday, 6)) };
+  },
+  weekahead: () => {
+    const monday = onesMondayOf();
+    return { from: onesDate(monday), to: onesDate(onesAddDays(monday, 11)) };
+  }
+};
+
+function onesOnEnter() {
+  if (!onesEntered) {
+    onesEntered = true;
+    $('onesTabs').querySelector('button[data-o="manhour"]').click();
+  }
+  if (!$('oSchedFrom').value) onesApplyWeek(0);
+}
+
+function onesSchedAutoQuery() {
+  if (onesSchedLoaded || onesSchedInFlight) return;
+  if (!$('oSchedFrom').value || !$('oSchedTo').value) return;
+  $('oSchedQuery').click();
+}
+
+function onesApplyWeek(offset) {
+  const r = onesWeekRange(offset);
+  $('oSchedFrom').value = r.from;
+  $('oSchedTo').value = r.to;
+  syncOnesPreset();
+}
+
+function onesShiftWeek(direction) {
+  const from = $('oSchedFrom').value;
+  const base = from ? new Date(from + 'T00:00:00') : new Date();
+  const monday = onesAddDays(base, direction * 7);
+  $('oSchedFrom').value = onesDate(monday);
+  $('oSchedTo').value = onesDate(onesAddDays(monday, 6));
+  syncOnesPreset();
+}
+
+function onesApplyPreset(key, { query = true } = {}) {
+  const fn = ONES_SCHED_PRESETS[key];
+  if (!fn) return;
+  const r = fn();
+  const a = $('oSchedFrom'), b = $('oSchedTo');
+  a.removeAttribute?.('max'); b.removeAttribute?.('min');
+  a.value = r.from;
+  b.value = r.to;
+  syncOnesPreset();
+  if (query) $('oSchedQuery').click();
+}
+
+function syncOnesPreset() {
+  const from = $('oSchedFrom').value, to = $('oSchedTo').value;
+  const matched = Object.keys(ONES_SCHED_PRESETS).find(k => {
+    const r = ONES_SCHED_PRESETS[k]();
+    return r.from === from && r.to === to;
+  });
+  document.querySelectorAll('[data-preset]').forEach(b => {
+    b.classList.toggle('on', b.dataset.preset === matched);
+  });
+}
+
+function onesOut(html) {
+  const el = $('oResult');
+  el.innerHTML = html;
+}
+
+function onesRaw(obj) {
+  const el = $('oRaw');
+  if (!obj) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.textContent = JSON.stringify(obj, null, 2);
+}
+
+function onesStatus(id, text, cls) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+function onesTable(headers, rows) {
+  if (!rows.length) return '<div class="combo-empty">无数据</div>';
+  let h = '<table><thead><tr>';
+  headers.forEach(x => { h += '<th' + (x.w ? ' style="width:' + x.w + '"' : '') + '>' + escHtml(x.t) + '</th>'; });
+  h += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    h += '<tr>';
+    r.forEach(c => { h += '<td>' + (c === null || c === undefined ? '—' : String(c)) + '</td>'; });
+    h += '</tr>';
+  });
+  return h + '</tbody></table>';
+}
+
+function onesLink(url, text) {
+  if (!url) return escHtml(text || '—');
+  return '<a href="' + escHtml(url) + '" target="_blank" rel="noopener">' + escHtml(text || url) + '</a>';
+}
+
+$('onesTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-o]');
+  if (!b) return;
+  document.querySelectorAll('#onesTabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#page-ones .osec').forEach(s => {
+    s.style.display = s.id === 'o-' + b.dataset.o ? '' : 'none';
+  });
+  const shared = $('oSharedResult');
+  if (shared) shared.style.display = b.dataset.o === 'manhour' ? 'none' : '';
+  if (b.dataset.o === 'schedule') onesSchedAutoQuery();
+  if (b.dataset.o === 'manhour') onesMhAutoQuery();
+});
+
+// ---- 工时概览 ----
+let onesMhLoaded = null;
+let onesMhInFlight = false;
+let onesMhSeq = 0;
+
+const MH_STATUS_META = {
+  full:    { icon: '✅', label: '已打满' },
+  short:   { icon: '🟡', label: '不足' },
+  over:    { icon: '🔴', label: '超出' },
+  missing: { icon: '⛔', label: '未打' },
+  off:     { icon: '·',  label: '假' },
+  overtime:{ icon: '🌙', label: '加班' },
+  pending: { icon: '⏳', label: '待打' }
+};
+
+function onesMhAutoQuery() {
+  if (onesMhLoaded || onesMhInFlight) return;
+  if (!$('oMhFrom').value) { const r = ONES_SCHED_PRESETS.thismonth(); $('oMhFrom').value = r.from; $('oMhTo').value = r.to; }
+  if (!$('oMhFrom').value || !$('oMhTo').value) return;
+  $('oMhQuery').click();
+}
+
+function onesMhDayNote(d) {
+  if (d.status === 'off') return '非工作日';
+  if (d.status === 'pending') return '还没到';
+  if (d.status === 'overtime') return '非工作日却打了工时';
+  if (d.status === 'full') return '正好打满';
+  if (d.status === 'missing') return '还差 1 人天';
+  const diff = Math.round((1 - d.manHour) * 100) / 100;
+  return diff > 0 ? '还差 ' + diff + ' 人天' : '超出 ' + Math.abs(diff) + ' 人天';
+}
+
+function onesMhCalendar(days) {
+  if (!days.length) return '<div class="combo-empty">该时间窗内没有数据</div>';
+  let h = '<div class="mh-cal">';
+  ['一', '二', '三', '四', '五', '六', '日'].forEach(w => { h += '<div class="mh-wd">' + w + '</div>'; });
+
+  const first = new Date(days[0].date + 'T00:00:00');
+  const lead = (first.getDay() + 6) % 7;
+  for (let i = 0; i < lead; i++) h += '<div class="mh-cell mh-blank"></div>';
+
+  days.forEach(d => {
+    const meta = MH_STATUS_META[d.status] || MH_STATUS_META.pending;
+    const cls = ['mh-cell', 'mh-' + d.status];
+    if (d.isToday) cls.push('mh-today');
+    const hours = d.manHour > 0 ? d.manHour : '';
+    h += '<div class="' + cls.join(' ') + '" title="' + escHtml(d.date + ' ' + d.weekDay + ' · ' + meta.label + ' · ' + onesMhDayNote(d)) + '">'
+      + '<span class="mh-num">' + Number(d.date.slice(8, 10)) + '</span>'
+      + '<span class="mh-h">' + onesMhCellText(d, hours) + '</span>'
+      + '<span class="mh-ico">' + meta.icon + '</span>'
+      + '</div>';
+  });
+  return h + '</div>';
+}
+
+function onesMhCellText(d, hours) {
+  if (d.status === 'off') return '假';
+  if (d.status === 'pending') return '—';
+  if (d.manHour > 0) return escHtml(hours);
+  return '0';
+}
+
+function onesMhSummary(s) {
+  const cards = [
+    { label: '已记录', value: s.manHours, unit: '人天', tone: 'neutral' },
+    { label: '应打', value: s.expected, unit: '人天', tone: 'neutral' },
+    { label: '打满', value: s.full + ' / ' + s.workdays, unit: '天', tone: 'ok' },
+    { label: '差额', value: (s.gap > 0 ? '-' : (s.gap < 0 ? '+' : '')) + Math.abs(s.gap), unit: '人天', tone: s.gap === 0 ? 'ok' : (s.gap > 0 ? 'err' : 'warn') }
+  ];
+  let h = '<div class="mh-stats">';
+  cards.forEach(c => {
+    h += '<div class="mh-stat mh-stat-' + c.tone + '">'
+      + '<div class="mh-stat-label">' + escHtml(c.label) + '</div>'
+      + '<div class="mh-stat-value">' + escHtml(c.value) + '<span class="mh-stat-unit">' + escHtml(c.unit) + '</span></div>'
+      + '</div>';
+  });
+  h += '</div>';
+
+  if (s.gap > 0) {
+    h += '<div class="warnbox" style="margin:14px 0 0">⚠️ 还有 <b>' + escHtml(s.gap) + ' 人天</b>没打（' + s.unfilled.length + ' 个工作日未打满）。工时必须正好打满，别少也别多。</div>';
+  } else if (s.gap < 0) {
+    h += '<div class="warnbox" style="margin:14px 0 0">⚠️ 已经<b>多打了 ' + escHtml(Math.abs(s.gap)) + ' 人天</b>，超出同样不合规，需要把多出来的部分调到别的日期。</div>';
+  } else {
+    h += '<div class="okbox" style="margin:14px 0 0">✅ 已过去的工作日全部正好打满。</div>';
+  }
+  return h;
+}
+
+$('oMhQuery').addEventListener('click', async () => {
+  const from = $('oMhFrom').value, to = $('oMhTo').value;
+  if (!from || !to) { onesStatus('oMhStatus', '请选择起止日期', 'error'); return; }
+  const seq = ++onesMhSeq;
+  onesMhInFlight = true;
+  $('oMhQuery').disabled = true;
+  onesStatus('oMhStatus', '查询中… ' + from + ' ~ ' + to, 'running');
+  try {
+    const r = await post('/api/ones/query', { cmd: 'manhour', from, to, all: true });
+    if (seq !== onesMhSeq) return;
+    if (!r.ok) throw new Error(r.error || '查询失败');
+    const d = (r.json && r.json.data) || {};
+    const days = d.days || [];
+    const summary = d.summary || { manHours: 0, expected: 0, workdays: 0, full: 0, gap: 0, unfilled: [] };
+    onesMhLoaded = { from, to };
+
+    let html = '<div class="hint" style="margin:0 0 12px">' + escHtml(d.person || '') + ' · ' + escHtml(from + ' ~ ' + to) + '</div>';
+    html += onesMhSummary(summary);
+    html += onesMhCalendar(days);
+
+    if (summary.unfilled && summary.unfilled.length) {
+      html += '<h2 style="margin:22px 0 10px">未打满的工作日</h2>';
+      html += onesTable(
+        [{ t: '日期', w: '120px' }, { t: '星期', w: '70px' }, { t: '已打', w: '90px' }, { t: '差额', w: '90px' }, { t: '状态' }],
+        summary.unfilled.map(x => [
+          escHtml(x.date), escHtml(x.weekDay),
+          escHtml(x.manHour) + ' 人天',
+          '<span class="range-cell">' + escHtml(Math.round((1 - x.manHour) * 100) / 100) + ' 人天</span>',
+          (MH_STATUS_META[x.status] || {}).icon + ' ' + escHtml(x.statusLabel)
+        ])
+      );
+    }
+    if (d.pageUrl) {
+      html += '<div class="hint" style="margin-top:14px">🔗 数据来自 ' + onesLink(d.pageUrl, 'ONES 个人统计 · 工时') + '，与页面上的工时明细一致。</div>';
+    }
+    $('oMhResult').innerHTML = html;
+    onesStatus('oMhStatus', '完成', 'success');
+  } catch (e) {
+    if (seq !== onesMhSeq) return;
+    onesMhLoaded = null;
+    $('oMhResult').innerHTML = '<div class="combo-empty">' + escHtml(e.message) + '</div>';
+    onesStatus('oMhStatus', '失败', 'error');
+  } finally {
+    if (seq === onesMhSeq) {
+      onesMhInFlight = false;
+      $('oMhQuery').disabled = false;
+    }
+  }
+});
+
+const ONES_MH_PRESETS = {
+  thisweek: () => onesWeekRange(0),
+  thismonth: () => onesMonthRange(0),
+  lastmonth: () => onesMonthRange(-1)
+};
+document.querySelectorAll('[data-mh-preset]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fn = ONES_MH_PRESETS[btn.dataset.mhPreset];
+    if (!fn) return;
+    const r = fn();
+    $('oMhFrom').value = r.from;
+    $('oMhTo').value = r.to;
+    $('oMhQuery').click();
+  });
+});
+
+// ---- 首页 · 近三周工时概览 ----
+let homeMhLoaded = false;
+let homeMhInFlight = false;
+
+const HOME_MH_WEEKS = [
+  { key: 'last',  offset: -1, label: '上周' },
+  { key: 'this',  offset: 0,  label: '本周' },
+  { key: 'next',  offset: 1,  label: '下周' }
+];
+
+function homeMhRange() {
+  return { from: onesWeekRange(-1).from, to: onesWeekRange(1).to };
+}
+
+function homeMhGroup(days) {
+  return HOME_MH_WEEKS.map(w => {
+    const r = onesWeekRange(w.offset);
+    const list = days.filter(d => d.date >= r.from && d.date <= r.to);
+    const past = list.filter(d => d.isWorkday && !d.isFuture);
+    const full = past.filter(d => d.status === 'full').length;
+    const gap = Math.round(past.reduce((a, d) => a + (1 - d.manHour), 0) * 100) / 100;
+    return { ...w, range: r, days: list, pastCount: past.length, full, gap };
+  });
+}
+
+function homeMhWeek(w) {
+  const label = w.label + ' · ' + w.range.from.slice(5) + ' ~ ' + w.range.to.slice(5);
+  let verdict;
+  if (w.pastCount === 0) verdict = '<span class="mh-badge mh-badge-idle">未开始</span>';
+  else if (w.gap > 0) verdict = '<span class="mh-badge mh-badge-err">差 ' + w.gap + ' 人天</span>';
+  else if (w.gap < 0) verdict = '<span class="mh-badge mh-badge-warn">多 ' + Math.abs(w.gap) + ' 人天</span>';
+  else verdict = '<span class="mh-badge mh-badge-ok">已打满</span>';
+
+  const count = w.pastCount ? '打满 ' + w.full + '/' + w.pastCount + ' 天' : '—';
+
+  let h = '<div class="hmh-week">'
+    + '<div class="hmh-head"><b>' + escHtml(label) + '</b>' + verdict
+    + '<span class="hmh-count">' + escHtml(count) + '</span></div>'
+    + '<div class="hmh-grid">';
+
+  ['一', '二', '三', '四', '五', '六', '日'].forEach(x => {
+    h += '<div class="hmh-wd">' + x + '</div>';
+  });
+
+  const first = w.days[0];
+  if (first) {
+    const lead = (new Date(first.date + 'T00:00:00').getDay() + 6) % 7;
+    for (let i = 0; i < lead; i++) h += '<div class="hmh-cell hmh-blank"></div>';
+  }
+  w.days.forEach(d => {
+    const meta = MH_STATUS_META[d.status] || MH_STATUS_META.pending;
+    const cls = ['hmh-cell', 'mh-' + d.status];
+    if (d.isToday) cls.push('mh-today');
+    h += '<div class="' + cls.join(' ') + '" title="' + escHtml(d.date + ' ' + d.weekDay + ' · ' + meta.label + ' · ' + onesMhDayNote(d)) + '">'
+      + '<span class="hmh-num">' + Number(d.date.slice(8, 10)) + '</span>'
+      + '<span class="hmh-h">' + onesMhCellText(d, d.manHour > 0 ? d.manHour : '') + '</span>'
+      + '</div>';
+  });
+  return h + '</div></div>';
+}
+
+async function homeMhLoad() {
+  if (homeMhLoaded || homeMhInFlight) return;
+  homeMhInFlight = true;
+  const r = homeMhRange();
+  onesStatus('homeMhStatus', '加载中…', 'running');
+  try {
+    const res = await post('/api/ones/query', { cmd: 'manhour', from: r.from, to: r.to, all: true });
+    if (!res.ok) throw new Error(res.error || '查询失败');
+    const d = (res.json && res.json.data) || {};
+    const weeks = homeMhGroup(d.days || []);
+    let html = '<div class="hmh-weeks">';
+    weeks.forEach(w => { html += homeMhWeek(w); });
+    html += '</div>';
+    $('homeMhBody').innerHTML = html;
+    homeMhLoaded = true;
+    onesStatus('homeMhStatus', '完成', 'success');
+  } catch (e) {
+    homeMhLoaded = false;
+    $('homeMhBody').innerHTML = '<div class="combo-empty">' + escHtml(e.message) + '</div>';
+    onesStatus('homeMhStatus', '失败', 'error');
+  } finally {
+    homeMhInFlight = false;
+  }
+}
+
+function homeMhRefresh() {
+  homeMhLoaded = false;
+  homeMhLoad();
+}
+
+// ---- 我的排期 ----
+let onesSchedSeq = 0;
+$('oSchedPrev').addEventListener('click', () => { onesShiftWeek(-1); $('oSchedQuery').click(); });
+$('oSchedNext').addEventListener('click', () => { onesShiftWeek(1); $('oSchedQuery').click(); });
+
+Object.keys(ONES_SCHED_PRESETS).forEach(key => {
+  const btn = document.querySelector('[data-preset="' + key + '"]');
+  if (btn) btn.addEventListener('click', () => onesApplyPreset(key));
+});
+['oSchedFrom', 'oSchedTo'].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('change', syncOnesPreset);
+});
+$('oSchedQuery').addEventListener('click', async () => {
+  const from = $('oSchedFrom').value, to = $('oSchedTo').value;
+  if (!from || !to) { onesStatus('oSchedStatus', '请选择起止日期', 'error'); return; }
+  const seq = ++onesSchedSeq;
+  onesSchedInFlight = true;
+  $('oSchedQuery').disabled = true;
+  onesStatus('oSchedStatus', '查询中… ' + from + ' ~ ' + to, 'running');
+  try {
+    const r = await post('/api/ones/query', { cmd: 'schedule', from, to });
+    if (seq !== onesSchedSeq) return;
+    if (!r.ok) throw new Error(r.error || '查询失败');
+    const d = (r.json && r.json.data) || {};
+    const items = d.items || [];
+    onesSchedLoaded = { from, to };
+    $('oResultTitle').textContent = '我的排期 · ' + from + ' ~ ' + to;
+    if (!items.length) { onesOut('<div class="combo-empty">该时间窗内没有排期（' + from + ' ~ ' + to + '）</div>'); onesStatus('oSchedStatus', '无数据', 'success'); onesRaw(null); return; }
+
+    const agg = {};
+    items.forEach(it => {
+      const k = it.requireId;
+      if (!agg[k]) agg[k] = { requireId: k, title: it.title, sprintTitle: it.sprintTitle, url: it.url, hours: 0, actions: new Set(), start: it.start, end: it.end };
+      agg[k].hours += Number(it.manHours) || 0;
+      if (it.action) agg[k].actions.add(it.action);
+      if (it.start && (!agg[k].start || it.start < agg[k].start)) agg[k].start = it.start;
+      if (it.end && (!agg[k].end || it.end > agg[k].end)) agg[k].end = it.end;
+    });
+    const aggRows = Object.values(agg).sort((a, b) => b.hours - a.hours);
+
+    let html = '<div class="hint" style="margin:0 0 10px">共 ' + items.length + ' 条估时 / ' + aggRows.length + ' 个需求</div>';
+    html += onesTable(
+      [{ t: '需求 ID', w: '90px' }, { t: '迭代', w: '130px' }, { t: '角色' }, { t: '动作' }, { t: '工期', w: '180px' }, { t: '人天', w: '60px' }, { t: '需求标题' }],
+      items.map(it => [
+        onesLink(it.url, it.requireId),
+        escHtml(it.sprintTitle || '—'),
+        escHtml(it.role || '—'),
+        escHtml(it.action || '—'),
+        '<span class="range-cell">' + escHtml((it.start || '—') + ' ~ ' + (it.end || '—')) + '</span>',
+        escHtml(it.manHours),
+        escHtml(it.title || '')
+      ])
+    );
+    html += '<h2 style="margin:22px 0 10px">按需求汇总</h2>';
+    html += onesTable(
+      [{ t: '需求 ID', w: '90px' }, { t: '迭代', w: '130px' }, { t: '窗口', w: '180px' }, { t: '总人天', w: '70px' }, { t: '动作' }, { t: '需求标题' }],
+      aggRows.map(a => [
+        onesLink(a.url, a.requireId),
+        escHtml(a.sprintTitle || '—'),
+        '<span class="range-cell">' + escHtml((a.start || '—') + ' ~ ' + (a.end || '—')) + '</span>',
+        escHtml(a.hours),
+        escHtml([...a.actions].join(' / ')),
+        escHtml(a.title || '')
+      ])
+    );
+    onesOut(html);
+    onesRaw(r.json);
+    onesStatus('oSchedStatus', '完成', 'success');
+  } catch (e) {
+    if (seq !== onesSchedSeq) return;
+    onesSchedLoaded = null;
+    onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+    onesStatus('oSchedStatus', '失败', 'error');
+  } finally {
+    if (seq === onesSchedSeq) {
+      onesSchedInFlight = false;
+      $('oSchedQuery').disabled = false;
+    }
+  }
+});
+
+// ---- 需求详情 ----
+$('oReqQuery').addEventListener('click', async () => {
+  const key = $('oReqKey').value.trim();
+  if (!key) { onesStatus('oReqStatus', '请输入需求 ID 或关键词', 'error'); return; }
+  onesStatus('oReqStatus', '查询中…', 'running');
+  try {
+    const r = await post('/api/ones/query', { cmd: 'req', key });
+    if (!r.ok) throw new Error(r.error || '查询失败');
+    const d = (r.json && r.json.data) || {};
+    const q = d.requirement || {};
+    const sc = d.schedule || {};
+    const est = (d.estimates && d.estimates.estimates) || [];
+    const bugs = d.bugs || [];
+    $('oResultTitle').textContent = '需求 ' + (q.id || '') + (q.title ? ' · ' + q.title : '');
+
+    const info = [
+      ['状态', q.status], ['优先级', q.priority], ['类型', (q.type || '—') + ' / ' + (q.label || '—')],
+      ['迭代', (q.sprintTitle || '—') + (q.sprintId ? ' (' + q.sprintId + ')' : '')],
+      ['层级', [q.level && q.level.businessDirection, q.level && q.level.businessLine, q.level && q.level.system, q.level && q.level.subSystem].filter(Boolean).join(' / ') || '—'],
+      ['产品经理', (q.pm || []).join('、') || '—'],
+      ['RD / QA / FE', [(q.rd || []).join('、'), (q.qa || []).join('、'), (q.fe || []).join('、')].map(x => x || '—').join(' / ')],
+      ['链接', onesLink(q.url, q.url)]
+    ];
+    let html = '<table><tbody>';
+    info.forEach(([k, v]) => { html += '<tr><th style="width:130px">' + escHtml(k) + '</th><td>' + (k === '链接' ? v : escHtml(v)) + '</td></tr>'; });
+    html += '</tbody></table>';
+
+    html += '<h2 style="margin:22px 0 10px">排期</h2>';
+    html += onesTable([{ t: '阶段' }, { t: '时间' }], [
+      ['开发', (sc.developStart || '—') + ' ~ ' + (sc.developEnd || '—')],
+      ['测试', (sc.testStart || '—') + ' ~ ' + (sc.testEnd || '—')],
+      ['计划提测', sc.submitTest || '—'],
+      ['计划上线', sc.online || '—'],
+      ['实际提测', sc.realSubmitTest || '—'],
+      ['实际上线', sc.realOnline || '—']
+    ]);
+
+    if (est.length) {
+      html += '<h2 style="margin:22px 0 10px">估时明细（' + est.length + ' 条）</h2>';
+      html += onesTable([{ t: '角色' }, { t: '成员' }, { t: '动作' }, { t: '人天' }, { t: '起止' }, { t: '完成' }],
+        est.map(e => [escHtml(e.role || '—'), escHtml(e.member || '—'), escHtml(e.action || '—'), escHtml(e.manHours), escHtml((e.start || '—') + ' ~ ' + (e.end || '—')), e.finished ? '✅' : '—']));
+    }
+
+    if (bugs.length) {
+      html += '<h2 style="margin:22px 0 10px">关联缺陷（' + bugs.length + ' 条）</h2>';
+      html += onesTable([{ t: 'ID', w: '90px' }, { t: '状态' }, { t: '优先级' }, { t: '处理人' }, { t: '标题' }],
+        bugs.map(b => [onesLink(b.url, b.id), escHtml(b.status || '—'), escHtml(b.priority || '—'), escHtml(b.resolver || '—'), escHtml(b.summary || '')]));
+    }
+
+    const tr = q.transitions || [];
+    if (tr.length) {
+      html += '<h2 style="margin:22px 0 10px">当前可流转事件</h2>';
+      html += onesTable([{ t: '事件' }, { t: '目标状态' }, { t: '类型' }],
+        tr.map(t => [escHtml(t.event), escHtml(t.target || '—'), escHtml(t.type || '—')]));
+    }
+
+    onesOut(html);
+    onesRaw(r.json);
+    onesStatus('oReqStatus', '完成', 'success');
+  } catch (e) {
+    onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+    onesStatus('oReqStatus', '失败', 'error');
+  }
+});
+
+// ---- 需求检索 ----
+$('oReqsQuery').addEventListener('click', async () => {
+  const body = {
+    cmd: 'reqs',
+    sprint: $('oReqsSprint').value.trim(),
+    pm: $('oReqsPm').value.trim(),
+    title: $('oReqsTitle').value.trim(),
+    level: $('oReqsLevel').value.trim(),
+    limit: 50
+  };
+  if (!body.sprint && !body.pm && !body.title && !body.level) {
+    onesStatus('oReqsStatus', '至少填一个过滤条件', 'error'); return;
+  }
+  onesStatus('oReqsStatus', '查询中…', 'running');
+  try {
+    const r = await post('/api/ones/query', body);
+    if (!r.ok) throw new Error(r.error || '查询失败');
+    const d = (r.json && r.json.data) || {};
+    const items = d.items || [];
+    $('oResultTitle').textContent = '需求检索（命中 ' + (d.total || items.length) + ' 条，展示 ' + items.length + ' 条）';
+    onesOut(onesTable(
+      [{ t: 'ID', w: '90px' }, { t: '状态' }, { t: '优先级' }, { t: '迭代', w: '130px' }, { t: 'PM' }, { t: '标题' }],
+      items.map(it => [
+        onesLink(it.url, it.id),
+        escHtml(it.status || '—'),
+        escHtml(it.priority || '—'),
+        escHtml(it.sprintTitle || '—'),
+        escHtml((it.pm || []).join('、') || '—'),
+        escHtml(it.title || '')
+      ])
+    ));
+    onesRaw(r.json);
+    onesStatus('oReqsStatus', '完成', 'success');
+  } catch (e) {
+    onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+    onesStatus('oReqsStatus', '失败', 'error');
+  }
+});
+
+// ---- 缺陷检索 ----
+$('oBugsQuery').addEventListener('click', async () => {
+  const body = {
+    cmd: 'bugs',
+    id: $('oBugsId').value.trim(),
+    resolver: $('oBugsResolver').value.trim(),
+    summary: $('oBugsSummary').value.trim(),
+    requireId: $('oBugsReq').value.trim(),
+    limit: Number($('oBugsLimit').value) || 10
+  };
+  onesStatus('oBugsStatus', '查询中…', 'running');
+  try {
+    const r = await post('/api/ones/query', body);
+    if (!r.ok) throw new Error(r.error || '查询失败');
+    const d = (r.json && r.json.data) || {};
+    const items = d.items || [];
+    $('oResultTitle').textContent = '缺陷检索（命中 ' + (d.total || items.length) + ' 条，展示 ' + items.length + ' 条）';
+    onesOut(onesTable(
+      [{ t: 'ID', w: '90px' }, { t: '状态' }, { t: '优先级' }, { t: '类型' }, { t: '处理人' }, { t: '关联需求' }, { t: '标题' }],
+      items.map(it => [
+        onesLink(it.url, it.id),
+        escHtml(it.status || '—'),
+        escHtml(it.priority || '—'),
+        escHtml(it.category || '—'),
+        escHtml(it.resolver || '—'),
+        it.requireId ? onesLink('https://ones.ke.com/project/requirement/' + it.requireId, it.requireId) : '—',
+        escHtml(it.summary || '')
+      ])
+    ));
+    onesRaw(r.json);
+    onesStatus('oBugsStatus', '完成', 'success');
+  } catch (e) {
+    onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+    onesStatus('oBugsStatus', '失败', 'error');
+  }
+});
+
+// ---- 迭代 / 项目 ----
+$('oMetaQuery').addEventListener('click', async () => {
+  onesStatus('oMetaStatus', '查询中…', 'running');
+  try {
+    const [ri, rp] = await Promise.all([
+      post('/api/ones/query', { cmd: 'iterations', keyword: $('oMetaIter').value.trim() }),
+      post('/api/ones/query', { cmd: 'projects', keyword: $('oMetaProj').value.trim() })
+    ]);
+    const iters = (ri.json && ri.json.data && ri.json.data.items) || [];
+    const projs = (rp.json && rp.json.data && rp.json.data.items) || [];
+    $('oResultTitle').textContent = '迭代 / 项目';
+    let html = '<h2 style="margin:0 0 10px">迭代（' + iters.length + '）</h2>';
+    html += onesTable([{ t: 'ID', w: '100px' }, { t: '状态' }, { t: '标题' }],
+      iters.map(i => [onesLink(i.url, i.id), escHtml(i.statusLabel || '—'), escHtml(i.title || '')]));
+    html += '<h2 style="margin:22px 0 10px">项目（' + projs.length + '）</h2>';
+    html += onesTable([{ t: 'm_project_id', w: '110px' }, { t: 'ID' }, { t: '状态' }, { t: '标题' }],
+      projs.map(p => [escHtml(p.mProjectId), onesLink(p.url, p.id), escHtml(p.status || '—'), escHtml(p.title || '')]));
+    onesOut(html);
+    onesRaw({ iterations: ri.json, projects: rp.json });
+    onesStatus('oMetaStatus', '完成', 'success');
+  } catch (e) {
+    onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+    onesStatus('oMetaStatus', '失败', 'error');
+  }
+});
+
+// ---- 写入子页切换 ----
+$('onesWriteTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-ow]');
+  if (!b) return;
+  document.querySelectorAll('#onesWriteTabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#o-write .wsec2').forEach(s => {
+    s.style.display = s.id === 'ow-' + b.dataset.ow ? '' : 'none';
+  });
+});
+
+function onesWrite({ cmd, payload, pre, commit, status, title }) {
+  const run = async (confirm) => {
+    const b = typeof payload === 'function' ? payload() : payload;
+    if (b === null) return;
+    onesStatus(status, confirm ? '提交中…' : '预检中…', 'running');
+    $(commit).disabled = true;
+    try {
+      const r = await post('/api/ones/write', { cmd, ...b, confirm });
+      const out = (r.stdout || '').trim() || (r.error || '');
+      $('oResultTitle').textContent = title + (confirm ? ' · 提交结果' : ' · 预检');
+      onesOut('<pre class="out" style="margin:0">' + escHtml(out) + '</pre>');
+      onesRaw(r.json);
+      if (!r.ok) {
+        onesStatus(status, confirm ? '提交失败' : '预检失败', 'error');
+        $(commit).disabled = true;
+        return;
+      }
+      if (confirm) {
+        onesStatus(status, '已提交', 'success');
+        toast('已提交到 ONES', 'ok');
+      } else {
+        onesStatus(status, '预检完成，请核对上面的预审单', 'success');
+        $(commit).disabled = false;
+      }
+    } catch (e) {
+      onesOut('<div class="combo-empty">' + escHtml(e.message) + '</div>');
+      onesStatus(status, '失败', 'error');
+      $(commit).disabled = true;
+    }
+  };
+  $(pre).addEventListener('click', () => run(false));
+  $(commit).addEventListener('click', () => run(true));
+}
+
+onesWrite({
+  cmd: 'create-req', pre: 'owReqPre', commit: 'owReqCommit', status: 'owReqStatus', title: '新建需求',
+  payload: () => ({
+    title: $('owReqTitle').value.trim(), level: $('owReqLevel').value.trim(),
+    project: $('owReqProject').value.trim(), pm: $('owReqPm').value.trim(),
+    sprint: $('owReqSprint').value.trim(), priority: $('owReqPriority').value,
+    type: $('owReqType').value, desc: $('owReqDesc').value.trim(),
+    withSafetyFunc: $('owReqSafety').checked
+  })
+});
+
+onesWrite({
+  cmd: 'create-bug', pre: 'owBugPre', commit: 'owBugCommit', status: 'owBugStatus', title: '新建缺陷',
+  payload: () => ({
+    summary: $('owBugSummary').value.trim(), resolver: $('owBugResolver').value.trim(),
+    requireId: $('owBugReq').value.trim(), priority: $('owBugPriority').value,
+    type: $('owBugType').value, findWay: $('owBugFindWay').value,
+    manHour: $('owBugHours').value.trim(), level: $('owBugLevel').value.trim(),
+    desc: $('owBugDesc').value.trim()
+  })
+});
+
+onesWrite({
+  cmd: 'schedule', pre: 'owSchedPre', commit: 'owSchedCommit', status: 'owSchedStatus', title: '调整排期',
+  payload: () => ({
+    id: $('owSchedId').value.trim(), online: $('owSchedOnline').value.trim(),
+    developStart: $('owSchedDevStart').value.trim(), developEnd: $('owSchedDevEnd').value.trim(),
+    testStart: $('owSchedTestStart').value.trim(), testEnd: $('owSchedTestEnd').value.trim(),
+    submitTest: $('owSchedSubmitTest').value.trim()
+  })
+});
+
+onesWrite({
+  cmd: 'move', pre: 'owMovePre', commit: 'owMoveCommit', status: 'owMoveStatus', title: '移入迭代',
+  payload: () => ({ ids: $('owMoveIds').value.trim(), sprint: $('owMoveSprint').value.trim() })
+});
+
+onesWrite({
+  cmd: 'advance', pre: 'owAdvPre', commit: 'owAdvCommit', status: 'owAdvStatus', title: '状态流转',
+  payload: () => ({
+    id: $('owAdvId').value.trim(), event: $('owAdvEvent').value.trim(),
+    kind: $('owAdvKind').value
+  })
+});
+
 // ============================================================== credentials ====
 let credItems = [];
 let credBusy = {};
@@ -1644,6 +3069,7 @@ $('credBody').addEventListener('click', async e => {
 
 // ================================================================== init ====
 async function init() {
+  initTheme();
   try {
     const hash = (location.hash || '').replace(/^#/, '');
     const saved = hash || localStorage.getItem('leo.tab');
@@ -1662,6 +3088,7 @@ async function init() {
     }
   } catch (e) {}
   refreshCredentialStatus();
+  homeMhLoad();
   loadJobs();
   try {
     const { jobs } = await api('/api/jobs');

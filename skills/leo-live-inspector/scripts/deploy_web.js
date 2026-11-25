@@ -7,7 +7,7 @@
  * 便于未来随时与核心 CLI Skill 解耦或独立剥离。
  *
  * 用法:
- *   node scripts/deploy_web.js [--port 6886] [--open]
+ *   node scripts/deploy_web.js [--port 6886] [--open] [--no-open] [--restart] [--stop] [--json]
  */
 
 import { fileURLToPath } from 'node:url';

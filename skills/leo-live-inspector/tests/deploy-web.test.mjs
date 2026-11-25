@@ -10,6 +10,8 @@ import {
 import {
   CREDENTIALS,
   SESSION_CSRF_TOKEN,
+  BUILD_ID,
+  computeBuildId,
   isValidJobId,
   verifyLocalRequestSecurity,
   validateDeployParams,
@@ -119,12 +121,36 @@ test('web_console: validateDeployParams does not require qaBranch for deploy_dev
   );
 });
 
-test('web_console: buildHtmlPage inline script passes syntax check and embeds CSRF token', () => {
+test('web_console: buildHtmlPage all inline script blocks pass syntax check and embed CSRF token', () => {
   const html = buildHtmlPage();
   assert.ok(html.includes(SESSION_CSRF_TOKEN));
-  const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] || '';
-  assert.ok(script.length > 1000);
-  assert.doesNotThrow(() => new Function(script));
+  const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  assert.equal(blocks.length, 2, 'Should contain head theme init script and main app script');
+  for (const code of blocks) {
+    assert.doesNotThrow(() => new Function(code));
+  }
+});
+
+test('web_console: computeBuildId produces deterministic 12-char SHA-1 fingerprint', () => {
+  assert.match(BUILD_ID, /^[0-9a-f]{12}$/);
+  assert.equal(computeBuildId(), BUILD_ID);
+});
+
+test('web_console: UI includes 3-week home manhour, ONES tab order, dual theme, and zero backdrop-filter', () => {
+  const html = buildHtmlPage();
+  assert.ok(html.includes('id="homeManhour"'), 'Home page should include 3-week manhour card');
+  assert.ok(html.includes('id="page-ones"'), 'Should include ONES workbench tab');
+  assert.ok(html.includes('id="themeToggle"'), 'Should include light/dark theme toggle button');
+  assert.ok(html.includes('html[data-theme="light"]'), 'Should include light theme CSS tokens');
+
+  // Top nav order: home -> ones -> deploy
+  const tabMatches = [...html.matchAll(/data-tab="([a-z]+)"/g)].map(m => m[1]);
+  assert.deepEqual(tabMatches, ['home', 'ones', 'deploy', 'logs', 'apollo', 'write', 'credentials']);
+
+  // CSS performance guard: no backdrop-filter or background-attachment:fixed in style block
+  const styleBlock = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+  assert.ok(!/backdrop-filter\s*:/i.test(styleBlock), 'Style block must not use backdrop-filter');
+  assert.ok(!/background-attachment\s*:\s*fixed/i.test(styleBlock), 'Style block must not use background-attachment:fixed');
 });
 
 test('web_console: extractJson extracts embedded JSON object from mixed stdout', () => {

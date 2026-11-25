@@ -20,6 +20,7 @@ import {
   diffFields,
   onesUrl,
   roleNames,
+  roleLabel,
   SCHEDULE_LABELS
 } from '../scripts/common/ones.js';
 import { parseArgs as parseQueryArgs } from '../scripts/ones_query.js';
@@ -69,6 +70,15 @@ test('ONES - roleNames 兼容字符串与对象数组', () => {
   assert.deepEqual(roleNames([{ value: 'x', text: '张三' }]), ['张三']);
   assert.deepEqual(roleNames(undefined), []);
   assert.deepEqual(roleNames(''), []);
+});
+
+test('ONES - roleLabel 将角色码翻译为可读名称，未知代码原样兜底', () => {
+  const map = { ER0001: 'RD', ER0002: 'FE', ER0003: 'QA', ER0007: 'PM' };
+  assert.equal(roleLabel('ER0001', map), 'RD');
+  assert.equal(roleLabel('ER0003', map), 'QA');
+  assert.equal(roleLabel('ER9999', map), 'ER9999');
+  assert.equal(roleLabel('', map), '');
+  assert.equal(roleLabel(null, map), '');
 });
 
 test('ONES - onesUrl 生成各实体链接', () => {
