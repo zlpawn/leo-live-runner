@@ -1,0 +1,31 @@
+{
+  "device": "hj07",
+  "description": "Smart Lock HJ07 (Nordic nRF54L15 Cortex-M33 + Zephyr RTOS + Eigencomm Cat.1)",
+  "mcu": "nrf54l15",
+  "modem": "eigencomm_cat1",
+  "firmware": {
+    "arch": "cortex-m33",
+    "vector_table_offset": "0x8800",
+    "fallback_sp": "0x2000D408",
+    "fallback_pc": "0x000304D1"
+  },
+  "memory_map": {
+    "imei_flash_addr": "0x7ea00",
+    "config_flash_addr": "0x7ea40",
+    "localkey_sram_addr": "0x200084c6",
+    "localkey_ptr_addr": "0x20004e68",
+    "rtt_scan_range": ["0x20000000", "0x10000"],
+    "sram_dump_range": ["0x20000000", "0x20000"]
+  },
+  "protocol": {
+    "model_id": "0x0c74",
+    "default_port": 8010,
+    "frame_header": "0xBE",
+    "auth_aes_mode": "AES-128-ECB",
+    "key_format": "tk_key_repeated_16b"
+  },
+  "defaults": {
+    "run_for_seconds": 10,
+    "clock_mode": "local"
+  }
+}
