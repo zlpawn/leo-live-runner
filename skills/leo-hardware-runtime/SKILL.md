@@ -37,7 +37,7 @@ description: Cross-platform (macOS and Windows) embedded hardware firmware runti
    - **参数三级复用与持久化**：所有用户补齐过的参数（`output_dir`、`backend_dir`、`default_test_host` 及分型号 `devices.<model>.{imei, tk_key, test_host, test_port, last_firmware}`）自动保存于本机 **`~/.shrimp/skills/leo-hardware-runtime/config.json`**。
    - **每次联调前强制展示当前参数单**：即使全部参数已在 `config.json` 中就绪，也必须先把解析出的配置表（含来源 `cli` / `config_device` / `missing`）展示给用户确认，方便随时修改（如换 IMEI、换测试地址）。
    - **缺项引导规范**：
-     - 缺 `test_host`：默认使用测试环境域名（`default_test_host` 默认 `test.huiju.iot.cloud.ke.com`，端口优先使用各型号 `device.json` 的 `default_port` 如 `8010`）；若被清空则从固件推导 `test.<domain>` 建议或切 `--mock`。
+     - 缺 `test_host`：默认使用测试环境域名（`default_test_host` 默认 `test.huiju.iot.cloud.ke.com`，`default_test_port` 全局默认 `8010`）；若被清空则从固件推导 `test.<domain>` 建议或切 `--mock`。
      - 缺 `imei` / `tk_key`：询问用户直接提供，或询问是否授权在 `backend_dir` 下通过 `leo-live-inspector` 从测试库查询/经确认后补齐（详见 [inspector-integration.md](references/inspector-integration.md)）。
      - 未知 `device` 型号：列出已有支持型号，引导先跑 `firmware_probe.py` 分析新固件。
 3. **固件探查（`firmware_probe.py`）**：

@@ -52,7 +52,7 @@ def read_config():
         "backend_dir": "",
         "renode_bin": "",
         "default_test_host": "test.huiju.iot.cloud.ke.com",
-        "default_test_port": 0,
+        "default_test_port": 8010,
         "devices": {},
         "updated_at": None,
     }
