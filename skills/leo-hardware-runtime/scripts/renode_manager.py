@@ -140,9 +140,72 @@ def select_asset_for_platform(release):
     ])
 
 
+def find_inspector_skill():
+    """Check whether sibling leo-live-inspector skill is installed."""
+    skill_dir = Path(__file__).resolve().parent.parent
+    candidates = [
+        skill_dir.parent / "leo-live-inspector" / "SKILL.md",
+        Path.home() / ".agents" / "skills" / "leo-live-inspector" / "SKILL.md",
+        Path.home() / ".gemini" / "config" / "skills" / "leo-live-inspector" / "SKILL.md",
+    ]
+    for cand in candidates:
+        if cand.exists():
+            return cand.parent.resolve()
+    return None
+
+
 def cmd_doctor(args):
-    """Report Renode CLI and host environment health."""
-    binary = find_renode_binary(args.renode_bin)
+    """Report Renode CLI, inspector integration, and host environment health."""
+    from workspace import ConfigError, get_config_path, read_config
+
+    cfg_error = None
+    cfg = {}
+    try:
+        cfg = read_config()
+    except ConfigError as exc:
+        cfg_error = str(exc)
+
+    binary = find_renode_binary(args.renode_bin or cfg.get("renode_bin") or None)
+    bin_dir = managed_bin_dir()
+    path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    bin_dir_in_path = any(
+        os.path.normcase(os.path.abspath(p)) == os.path.normcase(str(bin_dir))
+        for p in path_entries if p.strip()
+    )
+    inspector_dir = find_inspector_skill()
+
+    missing_hints = []
+    if not binary:
+        missing_hints.append({
+            "item": "renode_cli",
+            "message": "Renode CLI not found on PATH or standard install locations.",
+            "action": "Ask user to confirm, then run: python3 scripts/renode_manager.py install --confirm",
+        })
+    if not bin_dir_in_path and platform.system() == "Windows":
+        missing_hints.append({
+            "item": "windows_path",
+            "message": f"Managed bin dir '{bin_dir}' is not in PATH (sim_launcher still works directly).",
+            "action": f"Optionally add '{bin_dir}' to User PATH.",
+        })
+    if not inspector_dir:
+        missing_hints.append({
+            "item": "leo-live-inspector",
+            "message": "leo-live-inspector skill not found locally (needed only for test DB/log lookup).",
+            "action": "Prompt user to install leo-live-inspector or supply IMEI/tk_key manually.",
+        })
+    if not cfg.get("backend_dir"):
+        missing_hints.append({
+            "item": "backend_dir",
+            "message": "No backend_dir saved in config.json yet.",
+            "action": "Ask user for backend repo path when DB/log lookup via leo-live-inspector is needed.",
+        })
+    if cfg_error:
+        missing_hints.append({
+            "item": "config_json",
+            "message": cfg_error,
+            "action": "Inspect or remove the corrupt config.json manually.",
+        })
+
     info = {
         "os": platform.system(),
         "arch": platform.machine(),
@@ -151,14 +214,19 @@ def cmd_doctor(args):
         "renode_path": str(binary) if binary else None,
         "renode_version": get_renode_version(binary) if binary else None,
         "managed_install_dir": str(managed_base_dir() / "renode"),
-        "managed_bin_dir": str(managed_bin_dir()),
+        "managed_bin_dir": str(bin_dir),
+        "managed_bin_in_path": bin_dir_in_path,
+        "config_path": str(get_config_path()),
+        "backend_dir": cfg.get("backend_dir") or None,
+        "leo_live_inspector_dir": str(inspector_dir) if inspector_dir else None,
         "optional_packages": {
             pkg: importlib.util.find_spec(pkg) is not None
             for pkg in ("capstone", "elftools")
         },
+        "missing_hints": missing_hints,
     }
     print(json.dumps(info, indent=2, ensure_ascii=False))
-    return 0 if binary else 1
+    return 0 if binary and not cfg_error else 1
 
 
 def cmd_releases(args):

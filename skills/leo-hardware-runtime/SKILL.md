@@ -29,21 +29,26 @@ description: Cross-platform (macOS and Windows) embedded hardware firmware runti
 
 ---
 
-## 🔄 端云联调标准 5 步工作流
+## 🔄 端云联调标准 5 步工作流（含记忆复用与缺项引导）
 
-1. **环境检查（`renode_manager.py doctor`）**：确认本机已安装可用的 Renode CLI；若缺失，引导确认后执行 `install --confirm` 自动装好。
-2. **入参收集与后端核验（联动 `leo-live-inspector`）**：
-   - 收集目标：**固件文件路径**、**硬件型号（如 `hj07`）**、**测试后端 Host/Port**、**IMEI** 与 **设备密钥（如 `tk_key`）**。
-   - 若用户未提供完整设备参数，或需要确认云端是否已录入该设备，在用户确认的**后端工程目录**（用于自动读取 `application-test.yml` 等数据源配置）下调用 `leo-live-inspector` 查库确认；若测试环境缺数据且用户同意补齐，经确认后通过 `leo-live-inspector` 写入测试数据。详见 [inspector-integration.md](references/inspector-integration.md)。
+1. **环境检查（`renode_manager.py doctor`）**：
+   - 检查本机 `renode` CLI、`leo-live-inspector` 与 `config.json`；若缺失 Renode CLI，先展示下载方案并在用户确认后执行 `install --confirm`。
+2. **Pre-flight 体检与参数回显（`sim_launcher.py --device <model> --preflight`）**：
+   - **参数三级复用与持久化**：所有用户补齐过的参数（`output_dir`、`backend_dir`、`default_test_host` 及分型号 `devices.<model>.{imei, tk_key, test_host, test_port, last_firmware}`）自动保存于本机 **`~/.shrimp/skills/leo-hardware-runtime/config.json`**。
+   - **每次联调前强制展示当前参数单**：即使全部参数已在 `config.json` 中就绪，也必须先把解析出的配置表（含来源 `cli` / `config_device` / `missing`）展示给用户确认，方便随时修改（如换 IMEI、换测试地址）。
+   - **缺项引导规范**：
+     - 缺 `test_host`：优先提示 `config.json` 历史测试地址，或从固件字符串自动推导的 `test.<domain>` 建议地址，同时给出 `--mock` 离线选项。
+     - 缺 `imei` / `tk_key`：询问用户直接提供，或询问是否授权在 `backend_dir` 下通过 `leo-live-inspector` 从测试库查询/经确认后补齐（详见 [inspector-integration.md](references/inspector-integration.md)）。
+     - 未知 `device` 型号：列出已有支持型号，引导先跑 `firmware_probe.py` 分析新固件。
 3. **固件探查（`firmware_probe.py`）**：
    - 对已知型号（如 `hj07`），`sim_launcher.py` 会自动从固件向量表读取最新 `SP`/`PC`（或回退到型号默认值）。
    - 对全新型号，先运行探针定位向量表偏移、Modem AT 串口地址、定时器/RTT 与 Flash/SRAM 密钥槽位。
 4. **启动仿真联调（`sim_launcher.py`）**：
-   - 将本次配置与产物输出到 `output_dir/<YYYY-MM-DD>/<device>_<HHMMSS>_<tag>/`（按 `~/.shrimp/skills/leo-hardware-runtime/config.json` 三级级联解析；传入 `--output-dir` 时自动持久化记住），通过环境变量 `LEO_HW_SIM_CONFIG` 注入 Renode 外设脚本，零改动复用底层脚本。
-   - 支持 `--mock` 模式在离线/未入库时验证固件自身状态机与报文格式。
+   - 缺项未补齐前脚本会拒绝静默启动；全部就绪后自动把最新确认参数写回 `~/.shrimp/skills/leo-hardware-runtime/config.json`，并将产物输出到 `output_dir/<YYYY-MM-DD>/<device>_<HHMMSS>_<tag>/`。
+   - 通过环境变量 `LEO_HW_SIM_CONFIG` 注入 Renode 外设脚本，支持 `--mock` 离线验证。
 5. **双向通信验证与日志归因**：
    - 检查输出中的 RTT 日志（鉴权 `Auth Pass`、指令拉取 `0x8005`、状态上报 `0x8108`）及 `TCP_BRIDGE TX/RX` 原始报文。
-   - 若服务端拒收或主动断开，立即通过 `leo-live-inspector` 的测试日志查询定位后端具体报错。
+   - 若服务端拒收或主动断开，立即在 `backend_dir` 调用 `leo-live-inspector` 的测试日志查询定位后端具体报错。
 
 ---
 

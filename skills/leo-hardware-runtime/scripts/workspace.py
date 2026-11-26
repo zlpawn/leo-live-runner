@@ -4,10 +4,10 @@
 Manages persistent user configuration at:
   ~/.shrimp/skills/leo-hardware-runtime/config.json
 
-Provides 3-tier cascade resolution for output_dir:
-1. Explicitly specified --output-dir (persisted to config.json unless persist=False)
-2. Configured output_dir in ~/.shrimp/skills/leo-hardware-runtime/config.json
-3. Default fallback: ~/.shrimp/skills/leo-hardware-runtime/output
+Provides 3-tier cascade resolution for output_dir and per-device runtime params:
+1. User explicitly specified CLI argument (persisted to config.json unless persist=False)
+2. Saved settings in ~/.shrimp/skills/leo-hardware-runtime/config.json
+3. Default fallback (e.g. ~/.shrimp/skills/leo-hardware-runtime/output)
 """
 
 import argparse
@@ -51,6 +51,9 @@ def read_config():
         "output_dir": "",
         "backend_dir": "",
         "renode_bin": "",
+        "default_test_host": "",
+        "default_test_port": 8010,
+        "devices": {},
         "updated_at": None,
     }
     if not cfg_path.exists():
@@ -61,11 +64,14 @@ def read_config():
         raise ConfigError(f"{cfg_path} is corrupt or unreadable ({exc}); fix or remove it") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"{cfg_path} is corrupt (expected JSON object); fix or remove it")
-    return {**defaults, **data}
+    merged = {**defaults, **data}
+    if not isinstance(merged.get("devices"), dict):
+        merged["devices"] = {}
+    return merged
 
 
 def write_config(config):
-    """Write config.json atomically."""
+    """Write config.json atomically with restrictive permissions on POSIX."""
     cfg_path = get_config_path()
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -75,6 +81,11 @@ def write_config(config):
     tmp_path = cfg_path.parent / f".config-{os.getpid()}.tmp"
     try:
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if os.name != "nt":
+            try:
+                tmp_path.chmod(0o600)
+            except OSError:
+                pass
         tmp_path.replace(cfg_path)
     finally:
         if tmp_path.exists():
@@ -90,6 +101,52 @@ def update_config(partial):
     current = read_config()
     current.update(partial)
     return write_config(current)
+
+
+def update_device_config(device_name, updates):
+    """Merge per-device settings into config.json['devices'][device_name]."""
+    current = read_config()
+    devices = dict(current.get("devices") or {})
+    dev_entry = dict(devices.get(device_name) or {})
+    for key, val in updates.items():
+        if val is not None:
+            dev_entry[key] = val
+    devices[device_name] = dev_entry
+    current["devices"] = devices
+    return write_config(current)
+
+
+def resolve_device_params(device_name, cli_imei="", cli_tk_key="", cli_host="", cli_port=0, default_port=8010):
+    """Resolve runtime parameters with provenance (cli > config_device > config_global > device_default)."""
+    cfg = read_config()
+    dev_cfg = (cfg.get("devices") or {}).get(device_name, {})
+
+    def pick(cli_val, dev_key, global_key=None, fallback=None):
+        if cli_val is not None and str(cli_val).strip() and str(cli_val) != "0":
+            return {"value": cli_val, "source": "cli"}
+        dv = dev_cfg.get(dev_key)
+        if dv is not None and str(dv).strip() and str(dv) != "0":
+            return {"value": dv, "source": "config_device"}
+        if global_key:
+            gv = cfg.get(global_key)
+            if gv is not None and str(gv).strip() and str(gv) != "0":
+                return {"value": gv, "source": "config_global"}
+        if fallback is not None and str(fallback).strip():
+            return {"value": fallback, "source": "device_default"}
+        return {"value": "", "source": "missing"}
+
+    return {
+        "imei": pick(cli_imei, "imei"),
+        "tk_key": pick(cli_tk_key, "tk_key"),
+        "test_host": pick(cli_host, "test_host", "default_test_host"),
+        "test_port": pick(cli_port if cli_port else None, "test_port", "default_test_port", default_port),
+        "last_firmware": pick("", "last_firmware"),
+        "backend_dir": {"value": cfg.get("backend_dir", ""), "source": "config" if cfg.get("backend_dir") else "missing"},
+        "output_dir": {
+            "value": cfg.get("output_dir") or str(get_default_output_dir().resolve()),
+            "source": "config" if cfg.get("output_dir") else "default",
+        },
+    }
 
 
 def resolve_output_dir(explicit_output_dir=None, persist=True):
@@ -124,15 +181,29 @@ def main():
     parser = argparse.ArgumentParser(description="Manage ~/.shrimp/skills/leo-hardware-runtime/config.json")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("status", help="Show config.json and effective directories")
+    p_status = sub.add_parser("status", help="Show config.json and effective directories")
+    p_status.add_argument("--device", default=None, help="Also resolve parameters for a device model")
 
     p_set_out = sub.add_parser("set-output", help="Persist default output_dir in config.json")
     p_set_out.add_argument("dir", help="Target output directory path")
 
-    p_set = sub.add_parser("set", help="Set config fields (output_dir / backend_dir / renode_bin)")
+    p_set = sub.add_parser("set", help="Set global config fields")
     p_set.add_argument("--output-dir", default=None)
     p_set.add_argument("--backend-dir", default=None)
     p_set.add_argument("--renode-bin", default=None)
+    p_set.add_argument("--test-host", default=None)
+    p_set.add_argument("--test-port", type=int, default=None)
+
+    p_dev = sub.add_parser("set-device", help="Persist per-device debugging parameters in config.json")
+    p_dev.add_argument("device", help="Device model name (e.g. hj07)")
+    p_dev.add_argument("--imei", default=None)
+    p_dev.add_argument("--tk-key", default=None)
+    p_dev.add_argument("--test-host", default=None)
+    p_dev.add_argument("--test-port", type=int, default=None)
+    p_dev.add_argument("--firmware", default=None)
+
+    p_clr = sub.add_parser("clear-device", help="Remove saved device entry from config.json")
+    p_clr.add_argument("device")
 
     p_res = sub.add_parser("resolve", help="Resolve effective output_dir")
     p_res.add_argument("--output-dir", default=None)
@@ -143,13 +214,16 @@ def main():
         if args.command == "status":
             cfg = read_config()
             eff = resolve_output_dir()
-            print(json.dumps({
+            out = {
                 "config_path": str(get_config_path()),
                 "config_exists": get_config_path().exists(),
                 "effective_output_dir": str(eff["dir"]),
                 "output_source": eff["source"],
                 "config": cfg,
-            }, indent=2, ensure_ascii=False))
+            }
+            if args.device:
+                out["resolved_device_params"] = resolve_device_params(args.device)
+            print(json.dumps(out, indent=2, ensure_ascii=False))
             return 0
 
         if args.command == "set-output":
@@ -166,7 +240,36 @@ def main():
                 updates["backend_dir"] = str(Path(args.backend_dir).expanduser().resolve()) if args.backend_dir else ""
             if args.renode_bin is not None:
                 updates["renode_bin"] = str(Path(args.renode_bin).expanduser().resolve()) if args.renode_bin else ""
+            if args.test_host is not None:
+                updates["default_test_host"] = args.test_host.strip()
+            if args.test_port is not None:
+                updates["default_test_port"] = int(args.test_port)
             saved = update_config(updates)
+            print(json.dumps({"config_path": str(get_config_path()), "config": saved}, indent=2, ensure_ascii=False))
+            return 0
+
+        if args.command == "set-device":
+            updates = {}
+            if args.imei is not None:
+                updates["imei"] = args.imei.strip()
+            if args.tk_key is not None:
+                updates["tk_key"] = args.tk_key.strip()
+            if args.test_host is not None:
+                updates["test_host"] = args.test_host.strip()
+            if args.test_port is not None:
+                updates["test_port"] = int(args.test_port)
+            if args.firmware is not None:
+                updates["last_firmware"] = str(Path(args.firmware).expanduser().resolve()) if args.firmware else ""
+            saved = update_device_config(args.device, updates)
+            print(json.dumps({"config_path": str(get_config_path()), "config": saved}, indent=2, ensure_ascii=False))
+            return 0
+
+        if args.command == "clear-device":
+            cfg = read_config()
+            devices = dict(cfg.get("devices") or {})
+            devices.pop(args.device, None)
+            cfg["devices"] = devices
+            saved = write_config(cfg)
             print(json.dumps({"config_path": str(get_config_path()), "config": saved}, indent=2, ensure_ascii=False))
             return 0
 
