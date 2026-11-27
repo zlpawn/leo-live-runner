@@ -32,14 +32,8 @@ import { execFileSync } from 'node:child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 常见指令码语义字典
-const OPCODE_DESC = {
-  '0x8001': '【上行】设备鉴权请求 (Auth Request)',
-  '0x0002': '【下行】云端鉴权应答 (Auth Response)',
-  '0x8005': '【上行】设备请求指令 (Ask Command)',
-  '0x0004': '【下行】云端下发指令 (Downlink Command)',
-  '0x8108': '【上行】网络状态/电量心跳上报 (Event Report)'
-};
+// 保持脚本作为纯粹中立的原子探查工具：不硬编码任何具体硬件的指令码字典，
+// 协议语义翻译交由上层 AI Agent 根据当前设备型号与代码库（如 CmdType.java / KeyboxMsgType.java）自主解读。
 
 function parseArgs(args) {
   const options = {
@@ -247,7 +241,6 @@ function renderOutput(data, options, modeDesc) {
     const lvl = item.log_level || item.logLevel || 'INFO';
     const mod = item.module || '-';
     const cmd = item.cmd_type || item.cmdType || '-';
-    const desc = OPCODE_DESC[cmd] ? ` [${OPCODE_DESC[cmd]}]` : '';
 
     let content = (item.content || '').replace(/\|/g, '\\|');
     if (content.toLowerCase().includes('auth pass')) {
@@ -256,7 +249,7 @@ function renderOutput(data, options, modeDesc) {
       content = `🔴 ${content}`;
     }
 
-    console.log(`| ${id} | ${time} | ${lvl} | ${mod} | ${cmd}${desc} | ${content} |`);
+    console.log(`| ${id} | ${time} | ${lvl} | ${mod} | ${cmd} | ${content} |`);
   }
   console.log(``);
 }
