@@ -91,6 +91,9 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 | **“用 Dinsight 查近 7 天北京成交量”** | `node scripts/dinsight_query.js "近7天北京成交量"` | 自然语言查数结论，含工具调用与 SSE 摘要 | [dinsight-query-guide.md](references/dinsight-query-guide.md) |
 | **“在这个页面上抓数据 / 测一下 / 导出长图”** | `node scripts/cli/index.mjs state` / `eval` / `screenshot` / `net-start` | 驱动真实 Chrome 执行结构化数据抓取与 API 嗅探 (线上一律只读) | [browser-guide.md](references/browser-guide.md) |
 | **“查下钥匙箱 860734086841437 腾讯云状态与最新报文”** | `node scripts/tencent_iot_query.js 860734086841437 -n 5` | 设备在线状态、核心已订阅 Topic 报文解码与流转明细 | [tencent-iot-guide.md](references/tencent-iot-guide.md) |
+| **“排查设备 861993... 为什么断连 / 鉴权失败 / 查硬件测试日志”** | `node scripts/device_log_query.js --imei <IMEI> [-n 50]` | 格式化设备测试流水概况与报文反解表格（**默认查测试库**，离线自动回退本地） | [fast-log-guide.md](references/fast-log-guide.md) |
+| **“看下本地单片机最新仿真输出 / RTT 业务日志”** | `node scripts/device_log_query.js --local` / `--file <路径>` | 本地离线秒级解析 `rtt_full.log`，提取 Zephyr 线程事件与 0x8001/0x0004 协议 | [fast-log-guide.md](references/fast-log-guide.md) |
+| **“启动 J-Link 硬件日志实时监听并中继上报”** | `python3 scripts/jlink_forwarder.py --imei <IMEI>` | 监听 J-Link 本地 RTT 端口 (19021)，实时批量上报至测试环境接口 (LEO 专享) | - |
 | **“看下我这个月/这周的排期”** | `node scripts/ones_query.js schedule --from 2026-11-01 --to 2026-11-30` | 按时窗过滤的估时条目（角色码自动译为 RD/QA/FE/PM）+ 按需求聚合的交付窗口与总人天 | [ones-guide.md](references/ones-guide.md) |
 | **“看下我这个月工时打满没 / 哪天漏打了工时”** | `node scripts/ones_query.js manhour [--from 2026-11-01 --to 2026-11-30]` | 逐日工时状态（已打满/不足/未打/超出/假/加班/待打）、差额统计与未打满工作日清单 | [ones-guide.md](references/ones-guide.md) |
 | **“查下需求 50564297 / 钥匙箱那个需求什么状态”** | `node scripts/ones_query.js req <id\|标题关键词>` | 状态、优先级、产品经理、迭代、层级、排期、全员估时、关联缺陷、可流转事件 | [ones-guide.md](references/ones-guide.md) |
