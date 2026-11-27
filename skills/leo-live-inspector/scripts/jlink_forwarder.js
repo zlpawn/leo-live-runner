@@ -244,6 +244,9 @@ export class JLinkForwarder {
     this.targetUrl = options.url || DEFAULT_TARGET_URL;
     this.host = options.host || DEFAULT_TELNET_HOST;
     this.port = parseInt(options.port || DEFAULT_TELNET_PORT, 10);
+    this.portExplicit = !!options.portExplicit;
+    this.candidatePorts = [19021, 19022, 19023, 19024, 19025];
+    this.candidateIdx = 0;
     this.prodType = options.prodType || 'LOCK';
     this.batchSize = parseInt(options.batchSize || 50, 10);
     this.flushInterval = parseInt(options.interval || 1000, 10);
@@ -270,7 +273,8 @@ export class JLinkForwarder {
     console.log(`================================================================================`);
     console.log(`• 设备 IMEI     : ${this.imei}`);
     console.log(`• 批次会话 ID   : ${this.runId}`);
-    console.log(`• J-Link 目标   : ${this.host}:${this.port}`);
+    const portMode = this.portExplicit ? `指定端口 ${this.port}` : `自动探测 (候选: ${this.candidatePorts.join(', ')})`;
+    console.log(`• J-Link 目标   : ${this.host} [${portMode}]`);
     console.log(`• 上报后端接口  : ${this.targetUrl}`);
     console.log(`• 缓冲策略      : 每 ${this.batchSize} 条或每 ${this.flushInterval}ms 批量上报一次`);
     console.log(`• 快捷中断      : 按 Ctrl+C 停止监听并自动封板数据`);
@@ -290,8 +294,13 @@ export class JLinkForwarder {
   connect() {
     if (!this.running) return;
 
-    console.log(`⏳ 正在尝试连接 J-Link 本地 RTT 端口 (${this.host}:${this.port})...`);
-    this.socket = net.connect({ host: this.host, port: this.port }, () => {
+    const targetPort = this.portExplicit ? this.port : this.candidatePorts[this.candidateIdx];
+    console.log(`⏳ 正在尝试连接 J-Link 本地 RTT 端口 (${this.host}:${targetPort})...`);
+    this.socket = net.connect({ host: this.host, port: targetPort }, () => {
+      this.port = targetPort;
+      if (!this.portExplicit && targetPort !== DEFAULT_TELNET_PORT) {
+        console.log(`💡 自动探测到活动中的 J-Link 端口: ${targetPort}，已成功接入！`);
+      }
       console.log(`🟢 成功连接到 J-Link RTT Telnet 服务！正在实时监听硬件日志流水...\n`);
     });
 
@@ -323,7 +332,15 @@ export class JLinkForwarder {
     this.socket.on('error', (err) => {
       if (!this.running) return;
       if (err.code === 'ECONNREFUSED') {
-        console.log(`⚠️  未检测到 J-Link RTT 服务 (${this.host}:${this.port})，请确认已连接硬件并打开 J-Link RTT Viewer...`);
+        if (!this.portExplicit) {
+          // 切换到下一个候选端口尝试
+          this.candidateIdx = (this.candidateIdx + 1) % this.candidatePorts.length;
+          if (this.candidateIdx === 0) {
+            console.log(`⚠️  未检测到 J-Link RTT 端口 (已轮询 ${this.candidatePorts.join(', ')})，请确认已连接硬件并打开 J-Link RTT Viewer...`);
+          }
+        } else {
+          console.log(`⚠️  未检测到指定的 J-Link RTT 服务 (${this.host}:${this.port})，请确认端口是否开启...`);
+        }
       } else {
         console.log(`⚠️  J-Link Socket 异常: ${err.message}`);
       }
@@ -331,10 +348,10 @@ export class JLinkForwarder {
 
     this.socket.on('close', () => {
       if (!this.running) return;
-      console.log(`🔄 J-Link 连接已断开，3 秒后自动尝试重连...`);
+      const delay = (!this.portExplicit && this.candidateIdx !== 0) ? 600 : 3000;
       this.reconnectTimer = setTimeout(() => {
         this.connect();
-      }, 3000);
+      }, delay);
     });
   }
 
@@ -402,9 +419,10 @@ function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {
     imei: '',
-    url: DEFAULT_TARGET_URL,
-    host: DEFAULT_TELNET_HOST,
-    port: DEFAULT_TELNET_PORT,
+    url: process.env.ACCESS_BACKDOOR_URL || DEFAULT_TARGET_URL,
+    host: process.env.JLINK_RTT_HOST || DEFAULT_TELNET_HOST,
+    port: process.env.JLINK_RTT_PORT ? parseInt(process.env.JLINK_RTT_PORT, 10) : DEFAULT_TELNET_PORT,
+    portExplicit: !!process.env.JLINK_RTT_PORT,
     batchSize: 50,
     interval: 1000,
     prodType: 'LOCK'
@@ -415,7 +433,10 @@ function parseCliArgs() {
     if (arg === '--imei' && args[i + 1]) options.imei = args[++i];
     else if (arg === '--url' && args[i + 1]) options.url = args[++i];
     else if (arg === '--host' && args[i + 1]) options.host = args[++i];
-    else if (arg === '--port' && args[i + 1]) options.port = args[++i];
+    else if (arg === '--port' && args[i + 1]) {
+      options.port = parseInt(args[++i], 10);
+      options.portExplicit = true;
+    }
     else if (arg === '--batch-size' && args[i + 1]) options.batchSize = parseInt(args[++i], 10);
     else if (arg === '--interval' && args[i + 1]) options.interval = parseInt(args[++i], 10);
     else if (arg === '--prod-type' && args[i + 1]) options.prodType = args[++i];
@@ -426,9 +447,9 @@ function parseCliArgs() {
 
 选项:
   --imei <IMEI>        [必填] 目标设备 IMEI 号
-  --url <URL>          后端测试接入服务批量上报接口 (默认: ${DEFAULT_TARGET_URL})
+  --port <PORT>        J-Link 本地 RTT 监听端口 (默认: 19021; 未指定时会自动在 19021-19025 之间智能自适应探测)
   --host <HOST>        J-Link 本地 RTT 监听主机 (默认: 127.0.0.1)
-  --port <PORT>        J-Link 本地 RTT 监听端口 (默认: 19021)
+  --url <URL>          后端测试接入服务批量上报接口 (默认: ${DEFAULT_TARGET_URL})
   --batch-size <NUM>   批量上报阈值 (默认: 50)
   --interval <MS>      批量上报最大时间间隔毫秒 (默认: 1000)
   --prod-type <TYPE>   设备品类 (默认: LOCK, 可选 KEYBOX, GATEWAY)
