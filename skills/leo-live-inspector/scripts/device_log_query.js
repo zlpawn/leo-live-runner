@@ -1,24 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * 📟 Leo Live Inspector - 设备硬件流水日志探查引擎 (Device Hardware Log Query Engine)
- * ---------------------------------------------------------------------------------
+ * 📟 Leo Live Inspector - 设备硬件/嵌入式底层测试流水探查引擎 (Device Hardware Log Query Engine)
+ * -----------------------------------------------------------------------------------------
  * 适用场景：
- *   在 LEO 本地终端与 SCS 智能客服平台中，探查物联网设备 (门锁、钥匙箱等) 的运行流水日志、
- *   单片机 RTOS 业务事件 (0x8001鉴权、0x0004开锁、0x8108状态上报) 与模组通信报文。
+ *   在 LEO 本地开发终端与 SCS 智能客服排障中枢中，探查物联网设备 (门锁、钥匙箱、网关) 的硬件运行
+ *   流水日志、单片机 RTOS 底层事件、蜂窝模组通用 AT 指令交互、死机崩溃 (Crash/HardFault) 现场与协议报文。
  *
  * 核心特性：
  *   1. 智能自适应路由：
- *      • 传 --imei 时：默认优先查询测试数据库 (集中式测试日志表 device_test_run_log)；
- *      • 传 --file 或 --local 时：解析本地磁盘中的仿真或 J-Link 捕获日志 (rtt_full.log)；
+ *      • 传 --imei 时：默认优先直查测试数据库 (集中式测试日志表 device_test_run_log)；
+ *      • 传 --file 或 --local 时：解析本地磁盘中的仿真产物或 J-Link 捕获日志 (rtt_full.log)；
  *      • 无参执行时：默认扫描本地最近一次仿真产物目录，零配置直出；
- *   2. 协议语义动态反解：
- *      • 自动反解 0x8001 (鉴权请求), 0x0002 (鉴权响应), 0x8005 (轮询指令), 0x0004 (下发开锁), 0x8108 (状态上报)；
+ *   2. 通用硬件事件解析增强：
+ *      • 自动反解 3GPP 标准 AT+CSQ (信号质量)、AT+CEREG (注网状态)、AT+CGATT、PDP 断开等模组事件；
+ *      • 自动捕获 ARM Cortex-M HardFault、Zephyr Fault、看门狗复位与死机现场 PC/LR 寄存器；
  *   3. 毫秒级时序美化表格：输出终端对齐的 Markdown/ASCII 概况卡片与高亮日志流水。
  *
  * 用法示例：
  *   node scripts/device_log_query.js --imei 861993083543235               # 查测试库 (默认)
- *   node scripts/device_log_query.js --imei 861993083543235 --level ERROR # 仅过滤错误
+ *   node scripts/device_log_query.js --imei 861993083543235 --level ERROR # 仅过滤错误与死机
  *   node scripts/device_log_query.js --local                              # 查本地最新仿真
  *   node scripts/device_log_query.js --file /path/to/rtt_full.log         # 查指定本地日志
  */
@@ -28,12 +29,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { parseAtCommand, parseCrashFault } from './jlink_forwarder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// 保持脚本作为纯粹中立的原子探查工具：不硬编码任何具体硬件的指令码字典，
-// 协议语义翻译交由上层 AI Agent 根据当前设备型号与代码库（如 CmdType.java / KeyboxMsgType.java）自主解读。
 
 function parseArgs(args) {
   const options = {
@@ -80,7 +79,6 @@ function findLatestLocalRunDir(imeiFilter = '') {
 
     for (const r of runs) {
       if (imeiFilter) {
-        // 如果有 IMEI 过滤，检查目录名或 run.resc 中是否包含该 IMEI
         if (r.name.includes(imeiFilter)) return r.fullPath;
         const rescPath = path.join(r.fullPath, 'run.resc');
         if (fs.existsSync(rescPath)) {
@@ -131,6 +129,21 @@ function parseLocalLogFile(filePath, options) {
     } else {
       if (/error|fail/i.test(trimmed)) level = 'ERROR';
       else if (/warn/i.test(trimmed)) level = 'WARN';
+    }
+
+    // 通用 Crash / HardFault 异常解析
+    const crashInfo = parseCrashFault(trimmed);
+    if (crashInfo) {
+      level = 'ERROR';
+      module = crashInfo.module;
+      content = `${crashInfo.desc} ➔ 原始日志: ${content}`;
+    }
+
+    // 通用 AT 指令解析
+    const atInfo = parseAtCommand(trimmed);
+    if (atInfo) {
+      module = atInfo.module;
+      content = `${atInfo.desc} ➔ 原始: ${content}`;
     }
 
     // 过滤
@@ -210,7 +223,7 @@ function renderOutput(data, options, modeDesc) {
   const { runRecord, logs } = data;
 
   console.log(`\n================================================================================`);
-  console.log(`📟 设备硬件测试流水日志概览 [模式: ${modeDesc}]`);
+  console.log(`📟 设备硬件/嵌入式底层测试流水概览 (Device Hardware & Firmware Logs) [模式: ${modeDesc}]`);
   console.log(`================================================================================`);
 
   if (runRecord) {
@@ -231,7 +244,13 @@ function renderOutput(data, options, modeDesc) {
     return;
   }
 
-  console.log(`\n📜 流水日志明细 (显示最新 ${logs.length} 条):`);
+  // 统计死机与异常
+  const crashCount = logs.filter(l => (l.content || '').includes('单片机死机崩溃') || (l.module || '').includes('CRASH')).length;
+  if (crashCount > 0) {
+    console.log(`🚨 警告: 本次流水中检测到 ${crashCount} 次单片机崩溃/死机 (Crash/HardFault) 事件，请优先排查！`);
+  }
+
+  console.log(`\n📜 硬件/嵌入式流水明细 (显示最新 ${logs.length} 条):`);
   console.log(`| ID | 时间 | 级别 | 模块 | 协议指令 | 日志内容 |`);
   console.log(`|:---|:---|:---|:---|:---|:---|`);
 
@@ -243,10 +262,14 @@ function renderOutput(data, options, modeDesc) {
     const cmd = item.cmd_type || item.cmdType || '-';
 
     let content = (item.content || '').replace(/\|/g, '\\|');
-    if (content.toLowerCase().includes('auth pass')) {
+    if (content.includes('单片机死机崩溃') || mod.includes('CRASH')) {
+      content = `💥 **${content}**`;
+    } else if (content.toLowerCase().includes('auth pass')) {
       content = `🟢 **${content}**`;
     } else if (lvl === 'ERROR') {
       content = `🔴 ${content}`;
+    } else if (content.includes('模组信号') || content.includes('注网状态')) {
+      content = `📶 ${content}`;
     }
 
     console.log(`| ${id} | ${time} | ${lvl} | ${mod} | ${cmd} | ${content} |`);
@@ -278,49 +301,60 @@ function main() {
     }
     const rttFile = path.join(localDir, 'rtt_full.log');
     if (!fs.existsSync(rttFile)) {
-      console.error(`❌ 目标目录下未找到 rtt_full.log: ${localDir}`);
+      console.error(`❌ 仿真目录中未找到 rtt_full.log: ${rttFile}`);
       process.exit(1);
     }
-    const logs = parseLocalLogFile(rttFile, options);
-    renderOutput({ runRecord: { imei: options.imei, target_host: 'Local Sim' }, logs }, options, `本地最新仿真目录: ${path.basename(localDir)}`);
-    return;
-  }
 
-  // 3. 传了 --imei 时，默认优先走测试数据库 (DB 模式)
-  if (options.imei) {
     try {
-      const data = queryTestDatabase(options);
-      renderOutput(data, options, `测试环境数据库 (集中式)`);
+      const logs = parseLocalLogFile(rttFile, options);
+      renderOutput({ runRecord: null, logs }, options, `本地仿真产物: ${path.basename(localDir)}`);
       return;
-    } catch (err) {
-      console.warn(`⚠️ 直连测试数据库失败: ${err.message}`);
-      console.log(`⏳ 正在尝试兜底检查本地是否有 IMEI [${options.imei}] 的仿真日志...`);
-
-      const fallbackDir = findLatestLocalRunDir(options.imei);
-      if (fallbackDir && fs.existsSync(path.join(fallbackDir, 'rtt_full.log'))) {
-        const rttFile = path.join(fallbackDir, 'rtt_full.log');
-        const logs = parseLocalLogFile(rttFile, options);
-        renderOutput({ runRecord: { imei: options.imei, target_host: 'Local Fallback' }, logs }, options, `本地离线兜底: ${path.basename(fallbackDir)}`);
-        return;
-      } else {
-        console.error(`❌ 本地亦未找到 IMEI [${options.imei}] 的仿真记录。请核对 IMEI 或检查测试库网络凭证。`);
-        process.exit(1);
-      }
+    } catch (e) {
+      console.error(`❌ 解析本地仿真日志失败: ${e.message}`);
+      process.exit(1);
     }
   }
 
-  // 4. 无任何参数时，默认查本地最近一次仿真产物
-  const defaultDir = findLatestLocalRunDir();
-  if (defaultDir && fs.existsSync(path.join(defaultDir, 'rtt_full.log'))) {
-    const rttFile = path.join(defaultDir, 'rtt_full.log');
-    const logs = parseLocalLogFile(rttFile, options);
-    renderOutput({ runRecord: { target_host: 'Local Default' }, logs }, options, `本地最新仿真默认输出`);
-  } else {
-    console.log(`💡 用法提示:`);
-    console.log(`  node scripts/device_log_query.js --imei <IMEI>        # 查询测试数据库中的设备时序日志 (推荐)`);
-    console.log(`  node scripts/device_log_query.js --local              # 检索本地最近一次单片机仿真输出 (rtt_full.log)`);
-    console.log(`  node scripts/device_log_query.js --file <路径>        # 分析指定本地日志文件`);
+  // 3. 默认模式：通过 IMEI / runId 直查测试数据库
+  if (!options.imei && !options.runId) {
+    // 若未传 IMEI 也未传 runId，尝试查找本地最新仿真目录兜底
+    const localDir = findLatestLocalRunDir();
+    if (localDir) {
+      const rttFile = path.join(localDir, 'rtt_full.log');
+      if (fs.existsSync(rttFile)) {
+        try {
+          const logs = parseLocalLogFile(rttFile, options);
+          renderOutput({ runRecord: null, logs }, options, `未指定 IMEI，自动匹配本地最新仿真`);
+          return;
+        } catch {}
+      }
+    }
+
+    console.error(`❌ 错误: 请指定设备 IMEI 或 RunId (例如: node scripts/device_log_query.js --imei 861993083543235)`);
+    console.error(`   或指定 --local 查本地最近一次仿真，--file <路径> 查指定日志文件。`);
+    process.exit(1);
+  }
+
+  try {
+    const data = queryTestDatabase(options);
+    renderOutput(data, options, `测试环境数据库 (iot_plat.device_test_run_log)`);
+  } catch (err) {
+    console.error(`❌ 数据库查询失败: ${err.message}`);
+    // 优雅兜底：尝试在本地查
+    const localDir = findLatestLocalRunDir(options.imei);
+    if (localDir) {
+      const rttFile = path.join(localDir, 'rtt_full.log');
+      if (fs.existsSync(rttFile)) {
+        console.log(`💡 自动回退尝试读取本地仿真产物...`);
+        const logs = parseLocalLogFile(rttFile, options);
+        renderOutput({ runRecord: null, logs }, options, `离线本地仿真产物回退`);
+        return;
+      }
+    }
+    process.exit(1);
   }
 }
 
-main();
+if (process.argv[1] && process.argv[1].endsWith('device_log_query.js')) {
+  main();
+}
