@@ -26,6 +26,7 @@ import http from 'node:http';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
 import process from 'node:process';
+import { parseAtCommand, parseCrashFault } from './device_log_query.js';
 
 const DEFAULT_TARGET_URL = 'http://test.huiju.iot.cloud.ke.com:8080/backdoor/device/log/batch';
 const DEFAULT_TELNET_HOST = '127.0.0.1';
@@ -37,121 +38,6 @@ const RE_ZEPHYR_LOG = /^(?:\[([^\]]+)\]\s*)?<([a-z]+)>\s*([^:\s]+):\s*(.*)$/i;
 const RE_HEX_FRAME = /\b(be[0-9a-fA-F]{10,})\b/i;
 // 匹配指令码
 const RE_CMD_TYPE = /\b(0x[0-9a-fA-F]{4})\b/i;
-
-// 匹配 ARM Cortex-M / Zephyr 死机与异常
-const RE_CRASH_FAULT = /\*{3,}\s*(HARD|USAGE|BUS|MEM)\s*FAULT\s*\*{3,}|ASSERTION FAIL|Watchdog timeout|WDT Reset|Brownout reset|Guru Meditation|Faulting instruction address|r15\/pc/i;
-const RE_REG_PC = /(?:instruction address \(r15\/pc\)|r15\/pc|Faulting instruction address.*?|pc)\s*[:=]\s*(0x[0-9a-fA-F]{6,8})/i;
-const RE_REG_LR = /(?:r14\/lr|lr)\s*[:=]\s*(0x[0-9a-fA-F]{6,8})/i;
-const RE_REG_SP = /(?:r13\/sp|sp)\s*[:=]\s*(0x[0-9a-fA-F]{6,8})/i;
-
-// 匹配 3GPP 标准 AT 指令与响应
-const RE_AT_CSQ = /\+CSQ:\s*(\d+),(\d+)/i;
-const RE_AT_CREG = /\+(?:CEREG|CREG|CGREG):\s*(?:\d+,)?(\d+)/i;
-const RE_AT_CGATT = /\+CGATT:\s*(\d+)/i;
-const RE_AT_QIACT = /\+QIACT:\s*\d+,\d+,\d+,"([^"]+)"/i;
-const RE_AT_PDP_DEACT = /\+QIURC:\s*"pdpdeact"/i;
-const RE_AT_OPEN = /\+(?:QIOPEN|QMTOPEN):\s*(\d+),(\d+)/i;
-const RE_AT_SEND = /^(?:\[[0-9:.,\s]+\]\s*)?AT\+([A-Z0-9]+)/i;
-
-/** 解析蜂窝模组通用 AT 指令语义 */
-export function parseAtCommand(line) {
-  // 1. 信号强度 (CSQ)
-  const csqMatch = line.match(RE_AT_CSQ);
-  if (csqMatch) {
-    const rssi = parseInt(csqMatch[1], 10);
-    let desc = '';
-    if (rssi === 99) {
-      desc = '📶 [模组信号] 无蜂窝网络信号或天线异常脱落 (CSQ: 99)';
-    } else if (rssi >= 20) {
-      desc = `📶 [模组信号] 信号极佳 (CSQ: ${rssi}/31, 约 -${113 - rssi * 2}dBm)`;
-    } else if (rssi >= 12) {
-      desc = `📶 [模组信号] 信号正常 (CSQ: ${rssi}/31, 约 -${113 - rssi * 2}dBm)`;
-    } else {
-      desc = `⚠️ [模组信号] 信号较弱 (CSQ: ${rssi}/31, 极易掉线)`;
-    }
-    return { isAt: true, desc, module: 'MODEM_AT' };
-  }
-
-  // 2. 蜂窝网络注网状态 (CEREG / CREG)
-  const cregMatch = line.match(RE_AT_CREG);
-  if (cregMatch) {
-    const stat = parseInt(cregMatch[1], 10);
-    const statMap = {
-      0: '⚠️ [注网状态] 未搜网 / 未附着网络 (Not registered)',
-      1: '🟢 [注网状态] 已成功注册本地网络 (Registered, home network)',
-      2: '🔄 [注网状态] 正在搜网注册中... (Searching)',
-      3: '🚨 [注网状态] 注网被基站拒绝 (Registration denied, 请检查SIM卡或欠费停机)',
-      4: '⚪ [注网状态] 未知状态 (Unknown)',
-      5: '🟢 [注网状态] 已成功注册漫游网络 (Registered, roaming)'
-    };
-    return { isAt: true, desc: statMap[stat] || `[注网状态] 状态码: ${stat}`, module: 'MODEM_AT' };
-  }
-
-  // 3. GPRS 附着状态 (CGATT)
-  const cgattMatch = line.match(RE_AT_CGATT);
-  if (cgattMatch) {
-    const att = parseInt(cgattMatch[1], 10);
-    const desc = att === 1 ? '🟢 [数据业务] GPRS 附着成功 (Attached)' : '⚠️ [数据业务] GPRS 分离脱网 (Detached)';
-    return { isAt: true, desc, module: 'MODEM_AT' };
-  }
-
-  // 4. IP 分配 (QIACT)
-  const qiactMatch = line.match(RE_AT_QIACT);
-  if (qiactMatch) {
-    return { isAt: true, desc: `🌐 [模组IP] 蜂窝模组成功获取网络 IP: ${qiactMatch[1]}`, module: 'MODEM_AT' };
-  }
-
-  // 5. 基站踢下线 (PDP Deact)
-  if (RE_AT_PDP_DEACT.test(line)) {
-    return { isAt: true, desc: '🚨 [数据链路] 收到基站 pdpdeact，数据链路被动断开踢下线！', module: 'MODEM_AT' };
-  }
-
-  // 6. 网络连接结果 (QIOPEN / QMTOPEN)
-  const openMatch = line.match(RE_AT_OPEN);
-  if (openMatch) {
-    const errCode = openMatch[2];
-    const desc = errCode === '0'
-      ? '🟢 [网络握手] TCP/MQTT 链路连接成功 (Connect Success)'
-      : `🚨 [网络握手] TCP/MQTT 连接失败 (ErrCode: ${errCode})`;
-    return { isAt: true, desc, module: 'MODEM_AT' };
-  }
-
-  // 7. 纯 AT 指令发送
-  const sendMatch = line.match(RE_AT_SEND);
-  if (sendMatch) {
-    return { isAt: true, desc: `[AT指令发送] AT+${sendMatch[1]}`, module: 'MODEM_AT' };
-  }
-
-  return null;
-}
-
-/** 解析单片机死机 (Crash / HardFault) 现场 */
-export function parseCrashFault(line) {
-  if (!RE_CRASH_FAULT.test(line)) return null;
-
-  let faultType = 'HardFault / Panic';
-  const m = line.match(RE_CRASH_FAULT);
-  if (m && m[1]) {
-    faultType = `${m[1].toUpperCase()} FAULT`;
-  } else if (/ASSERTION FAIL/i.test(line)) {
-    faultType = 'Assertion Failure';
-  } else if (/Watchdog|WDT/i.test(line)) {
-    faultType = 'Watchdog Reset (看门狗复位)';
-  }
-
-  // 尝试抓取 PC/LR/SP 寄存器
-  const pcM = line.match(RE_REG_PC);
-  const lrM = line.match(RE_REG_LR);
-  const spM = line.match(RE_REG_SP);
-
-  let regDetails = '';
-  if (pcM) regDetails += ` | PC=${pcM[1]}`;
-  if (lrM) regDetails += ` | LR=${lrM[1]}`;
-  if (spM) regDetails += ` | SP=${spM[1]}`;
-
-  const desc = `💥 [单片机死机崩溃现场] 发现异常: ${faultType}${regDetails}`;
-  return { isCrash: true, faultType, desc, module: 'CRASH_HANDLER' };
-}
 
 /** 单行日志结构化解析 */
 export function parseLogLine(rawLine, defaultImei, runId) {
