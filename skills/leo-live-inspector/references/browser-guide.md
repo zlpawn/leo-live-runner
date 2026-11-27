@@ -43,7 +43,7 @@ node <skillDir>/scripts/cli/index.mjs <command>
 - **高密度 DOM 快照**：
   - `snapshot` 或 `state`：获取当前页高信息量交互 DOM 树（包含 `tag`、`text`、`selector`、`id`、`rect`、`visible`、`ref`、`generation`）。
 - **精准检索元素**：
-  - `find --text "查询"` / `find --sel "button.submit"` / `find --target '{"kind":"semantic","role":"button","name":"Sign in"}'`
+  - `find --text "查询"` / `find --sel "button.submit"` / `find --within ".ant-menu" --text "领域空间"` / `find --nth 0` / `find --target '{"kind":"semantic","role":"button","name":"Sign in"}'`
 - **读取页面纯文本（大文本抓取）**：
   - `content --max-chars 4000`：快速读取页面主体文本内容，适用于文章、长篇日志或脱壳文本抓取。
 - **流式/动态页面稳定等待**：
@@ -55,14 +55,15 @@ node <skillDir>/scripts/cli/index.mjs <command>
   - `eval --file "/path/to/extract.js"`：**强烈推荐**。将页面抽取逻辑写成单独 JS 文件通过 `--file` 执行，返回结构化 JSON，彻底避免命令行引号转义和中文破坏。
 
 ### 4. 复杂元素交互与控制
-- **点击元素（原生 CDP 可信物理事件，支持 ref / text / sel / target）**：
+- **点击元素（原生 CDP 可信物理事件，支持 ref / text / sel / target；重名可用 `--within` 限定容器或 `--nth` 指定序号，歧义报错会附带候选列表 `candidates`）**：
   - `click --ref 10`（最简推荐）
   - `click --text "进入配置"`
+  - `click --text "领域空间" --within ".ant-menu"`（或 `--nth 0`）
   - `click --sel "button.submit"`
   - `click --target '{"kind":"ref","ref":10}'`
-- **表单填写（兼容 React/Vue 受控组件，支持失焦校验）**：
+- **表单填写（兼容 React/Vue 受控组件，支持 `--within` / `--nth` / `--blur` 失焦校验）**：
   - `fill --ref 10 --val "admin" --blur`
-  - `fill --sel "#input" --val "admin" --blur`
+  - `fill --sel "#input" --within ".ant-modal" --val "admin" --blur`
 - **键盘按键（原生 CDP `Input.dispatchKeyEvent`，`isTrusted: true`）**：
   - `press Enter --sel "input[placeholder*='搜索']"`：完全支持回车查询、Tag 标签确认与快捷键触发。
 - **文件上传（原生 CDP `DOM.setFileInputFiles`，绕过系统弹窗）**：
@@ -71,7 +72,7 @@ node <skillDir>/scripts/cli/index.mjs <command>
   - 指定选择器：`upload --sel "input[type='file']" --files "a.png,b.png"`
 
 ### 5. 网络抓包、截图与凭证导出
-- **非侵入式网络抓包（XHR/fetch 接口数据抓取）**：
+- **非侵入式网络抓包（XHR/fetch 接口数据抓取；若标签页已有其他调试器占用，自动降级为页面层 `page_hook` 拦截 `fetch`/`XHR`）**：
   - 启动抓包：`net-start`
   - 过滤获取接口报文：`net-get --grep "api/v1/list"`（直接获取真实后端返回的原始 JSON 数据）
   - 停止抓包：`net-stop`
