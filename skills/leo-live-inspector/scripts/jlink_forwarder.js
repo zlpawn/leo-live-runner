@@ -26,9 +26,11 @@ import http from 'node:http';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
 import process from 'node:process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { parseAtCommand, parseCrashFault } from './device_log_query.js';
 
-const DEFAULT_TARGET_URL = 'http://test.huiju.iot.cloud.ke.com:8080/backdoor/device/log/batch';
+const DEFAULT_TARGET_URL = 'http://beijia-iot-device-access.mvp.ttb.test.ke.com/backdoor/device/log/batch';
 const DEFAULT_TELNET_HOST = '127.0.0.1';
 const DEFAULT_TELNET_PORT = 19021;
 
@@ -281,6 +283,49 @@ export class JLinkForwarder {
     }
   }
 
+  async syncFile(filePath) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`指定的日志文件不存在: ${filePath}`);
+    }
+
+    console.log(`\n================================================================================`);
+    console.log(`🚀 硬件测试日志离线同步引擎启动 (同步至测试环境数据库)`);
+    console.log(`================================================================================`);
+    console.log(`• 设备 IMEI     : ${this.imei}`);
+    console.log(`• 批次会话 ID   : ${this.runId}`);
+    console.log(`• 本地日志文件  : ${filePath}`);
+    console.log(`• 目标上报接口  : ${this.targetUrl}`);
+    console.log(`• 批量分片大小  : ${this.batchSize} 条/批次`);
+    console.log(`================================================================================\n`);
+
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+
+    let totalParsed = 0;
+    for await (const line of rl) {
+      const res = parseLogLine(line, this.imei, this.runId);
+      if (!res) continue;
+
+      totalParsed++;
+      if (res.authEvent !== 0) {
+        this.authStatus = res.authEvent;
+      }
+      this.buffer.push(res.item);
+
+      if (this.buffer.length >= this.batchSize) {
+        await this.flushBuffer(false);
+      }
+    }
+
+    // 最终封盘上报 (带上 isFinal: true)
+    await this.flushBuffer(true);
+    const duration = ((Date.now() - this.startTime) / 1000).toFixed(1);
+    console.log(`\n🎉 离线日志文件同步完成！共解析 ${totalParsed} 条，成功入库 ${this.totalSent} 条流水 (耗时: ${duration}s, RunId: ${this.runId})\n`);
+  }
+
   async stop() {
     if (!this.running) return;
     this.running = false;
@@ -305,6 +350,7 @@ function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {
     imei: '',
+    file: '',
     url: process.env.ACCESS_BACKDOOR_URL || DEFAULT_TARGET_URL,
     host: process.env.JLINK_RTT_HOST || DEFAULT_TELNET_HOST,
     port: process.env.JLINK_RTT_PORT ? parseInt(process.env.JLINK_RTT_PORT, 10) : DEFAULT_TELNET_PORT,
@@ -317,6 +363,7 @@ function parseCliArgs() {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--imei' && args[i + 1]) options.imei = args[++i];
+    else if ((arg === '--file' || arg === '--sync') && args[i + 1]) options.file = args[++i];
     else if (arg === '--url' && args[i + 1]) options.url = args[++i];
     else if (arg === '--host' && args[i + 1]) options.host = args[++i];
     else if (arg === '--port' && args[i + 1]) {
@@ -333,6 +380,7 @@ function parseCliArgs() {
 
 选项:
   --imei <IMEI>        [必填] 目标设备 IMEI 号
+  --file <FILE>        [可选] 离线日志文件路径 (指定此项时，自动将本地文件流式同步至测试数据库，不连接 Telnet)
   --port <PORT>        J-Link 本地 RTT 监听端口 (默认: 19021; 未指定时会自动在 19021-19025 之间智能自适应探测)
   --host <HOST>        J-Link 本地 RTT 监听主机 (默认: 127.0.0.1)
   --url <URL>          后端测试接入服务批量上报接口 (默认: ${DEFAULT_TARGET_URL})
@@ -357,10 +405,18 @@ if (process.argv[1] && process.argv[1].endsWith('jlink_forwarder.js')) {
     }
     const forwarder = new JLinkForwarder(opts);
 
-    process.on('SIGINT', () => forwarder.stop());
-    process.on('SIGTERM', () => forwarder.stop());
-
-    forwarder.start();
+    if (opts.file) {
+      // 离线日志同步模式
+      forwarder.syncFile(opts.file).catch(err => {
+        console.error(`❌ 离线同步失败: ${err.message}`);
+        process.exit(1);
+      });
+    } else {
+      // 实时 RTT 监听模式
+      process.on('SIGINT', () => forwarder.stop());
+      process.on('SIGTERM', () => forwarder.stop());
+      forwarder.start();
+    }
   } catch (err) {
     console.error(`❌ 启动失败: ${err.message}`);
     process.exit(1);

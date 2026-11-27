@@ -93,7 +93,7 @@ description: 线上与测试环境全场景数据探查、全链路排障与配�
 | **“查下钥匙箱 860734086841437 腾讯云状态与最新报文”** | `node scripts/tencent_iot_query.js 860734086841437 -n 5` | 设备在线状态、核心已订阅 Topic 报文解码与流转明细 | [tencent-iot-guide.md](references/tencent-iot-guide.md) |
 | **“查设备 861993... 硬件/嵌入式测试流水 / AT 指令 / 查死机”** | `node scripts/device_log_query.js --imei <IMEI> [-n 50]` | 格式化**硬件端/单片机**底层测试流水与时序表格（默认查测试库，支持模组 AT 状态与 Crash 现场提取） | [database-guide.md](references/database-guide.md) |
 | **“看下本地单片机最新仿真输出 / RTT 业务日志 / 崩溃堆栈”** | `node scripts/device_log_query.js --local` / `--file <路径>` | 本地离线秒级解析 `rtt_full.log`，提取 Zephyr 线程事件、模组 AT 信号与 HardFault 寄存器 | [database-guide.md](references/database-guide.md) |
-| **“启动 J-Link 硬件日志实时监听并中继上报”** | `node scripts/jlink_forwarder.js --imei <IMEI>` | 监听 J-Link 本地 RTT 端口 (19021)，纯 Node.js 流式抓取并批量上报测试服务 (LEO 专享) | - |
+| **“启动 J-Link 硬件日志实时监听/离线同步上报”** | `node scripts/jlink_forwarder.js --imei <IMEI> [--file <路径>]` | 监听 J-Link 本地 RTT 端口 (19021-19025) 实时流式抓取，或指定 `--file` 一键将本地/仿真日志同步上报至测试服务 `beijia-iot-device-access` 入库 (LEO 专享) | - |
 | **“看下我这个月/这周的排期”** | `node scripts/ones_query.js schedule --from 2026-11-01 --to 2026-11-30` | 按时窗过滤的估时条目（角色码自动译为 RD/QA/FE/PM）+ 按需求聚合的交付窗口与总人天 | [ones-guide.md](references/ones-guide.md) |
 | **“看下我这个月工时打满没 / 哪天漏打了工时”** | `node scripts/ones_query.js manhour [--from 2026-11-01 --to 2026-11-30]` | 逐日工时状态（已打满/不足/未打/超出/假/加班/待打）、差额统计与未打满工作日清单 | [ones-guide.md](references/ones-guide.md) |
 | **“查下需求 50564297 / 钥匙箱那个需求什么状态”** | `node scripts/ones_query.js req <id\|标题关键词>` | 状态、优先级、产品经理、迭代、层级、排期、全员估时、关联缺陷、可流转事件 | [ones-guide.md](references/ones-guide.md) |

@@ -309,15 +309,17 @@ function queryTestDatabase(options) {
     const recordRaw = execFileSync('node', [testMysqlScript, 'platform', recordSql, '-d', 'iot_access', '--json'], { encoding: 'utf8', timeout: 8000 });
     let runRecord = null;
     try {
-      const arr = JSON.parse(recordRaw);
-      if (Array.isArray(arr) && arr.length > 0) runRecord = arr[0];
+      const parsed = JSON.parse(recordRaw);
+      const rows = (parsed && Array.isArray(parsed.rows)) ? parsed.rows : (Array.isArray(parsed) ? parsed : []);
+      if (rows.length > 0) runRecord = rows[0];
     } catch {}
 
     // 执行日志流水查询
     const logsRaw = execFileSync('node', [testMysqlScript, 'platform', logSql, '-d', 'iot_access', '--json'], { encoding: 'utf8', timeout: 10000 });
     let logs = [];
     try {
-      logs = JSON.parse(logsRaw);
+      const parsed = JSON.parse(logsRaw);
+      logs = (parsed && Array.isArray(parsed.rows)) ? parsed.rows : (Array.isArray(parsed) ? parsed : []);
     } catch {
       logs = [];
     }
