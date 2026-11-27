@@ -306,7 +306,7 @@ function queryTestDatabase(options) {
 
   try {
     // 执行主表查询
-    const recordRaw = execFileSync('node', [testMysqlScript, 'platform', recordSql, '--json'], { encoding: 'utf8', timeout: 8000 });
+    const recordRaw = execFileSync('node', [testMysqlScript, 'platform', recordSql, '-d', 'iot_access', '--json'], { encoding: 'utf8', timeout: 8000 });
     let runRecord = null;
     try {
       const arr = JSON.parse(recordRaw);
@@ -314,7 +314,7 @@ function queryTestDatabase(options) {
     } catch {}
 
     // 执行日志流水查询
-    const logsRaw = execFileSync('node', [testMysqlScript, 'platform', logSql, '--json'], { encoding: 'utf8', timeout: 10000 });
+    const logsRaw = execFileSync('node', [testMysqlScript, 'platform', logSql, '-d', 'iot_access', '--json'], { encoding: 'utf8', timeout: 10000 });
     let logs = [];
     try {
       logs = JSON.parse(logsRaw);
@@ -451,7 +451,7 @@ function main() {
 
   try {
     const data = queryTestDatabase(options);
-    renderOutput(data, options, `测试环境数据库 (iot_plat.device_test_run_log)`);
+    renderOutput(data, options, `测试环境数据库 (iot_access.device_test_run_log)`);
   } catch (err) {
     console.error(`❌ 数据库查询失败: ${err.message}`);
     // 优雅兜底：尝试在本地查
